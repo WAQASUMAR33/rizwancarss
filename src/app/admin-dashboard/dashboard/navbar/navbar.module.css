@@ -1,0 +1,46 @@
+.container {
+  padding: 5px;
+  border-radius: 10px;
+  height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #Ac3E31;
+  margin-bottom: 20px;
+}
+
+.title {
+  color: white;
+  padding-left: 20px;
+  font-weight: bold;
+  text-transform: capitalize;
+}
+
+.menu {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background-color: #ffffff;
+  padding: 2px;
+  border-radius: 10px;
+  outline: none;
+  height: 40px;
+}
+
+.input {
+  background-color: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+}
+
+.icons {
+  display: flex;
+  gap: 20px;
+}

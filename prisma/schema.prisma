@@ -1,0 +1,461 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Enums for status fields
+enum DistributorStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+enum VehicleStatus {
+  Pending
+  Transport
+  Inspection
+  Shipped
+  Collect
+  Delievered
+  Sold
+}
+
+enum InvoiceStatus {
+  PAID
+  UNPAID
+}
+
+// Admin Model (Updated with unique relation fields)
+model Admin {
+  id              Int              @id @default(autoincrement())
+  role            String           @db.VarChar(255)
+  username        String           @db.VarChar(255) @unique
+  password        String           @db.VarChar(255)
+  fullname        String           @db.VarChar(255)
+  balance         Float            @default(0)
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+  seaPorts        SeaPort[]
+  vehicles        AddVehicle[]
+  ledgers         Ledger[]         @relation("AdminLedger")
+  paymentRequests PaymentRequests[] @relation("AdminPaymentRequests")
+  inspections     Inspection[]     @relation("AdminInspections")       // For Inspection model
+  transports      Transport[]      @relation("AdminTransports")
+  portCollects    PortCollect[]    @relation("AdminPortCollects")      // New relation for PortCollect
+  showroomVehicles ShowRoom_Vehicle[] @relation("AdminShowroomVehicles") // New relation for ShowRoom_Vehicle
+  saleVehicles    Sale_Vehicle[]   @relation("AdminSaleVehicles")      // New relation for Sale_Vehicle
+  containerBookings ContainerBooking[] @relation("AdminContainerBookings")
+  containerDetails  ContainerDetail[]  @relation("AdminContainerDetails")
+  containerItems    ContainerItemDetail[] @relation("AdminContainerItems")
+  expenses        Expenses[]       @relation("AdminExpenses")          // Relation to Expenses via added_by
+  @@index([username])
+}
+
+model ContainerBooking {
+  id                     Int               @id @default(autoincrement())
+  actualShipper          String
+  cyOpen                 String
+  bookingNo              String            @unique
+  etd                    DateTime
+  cyCutOff               DateTime
+  eta                    DateTime
+  volume                 Int               @default(0)
+  carrier                String
+  vessel                 String
+  portOfLoading          String
+  portOfDischarge        String
+  cargoMode              String
+  placeOfIssue           String
+  freightTerm            String
+  shipperName            String
+  consignee              String
+  descriptionOfGoods     String            @db.Text    @default("")
+  vanning_charges        Float             @default(0)
+  seal_amount            Float             @default(0)
+  surrender_fee          Float             @default(0)
+  bl_fee                 Float             @default(0)
+  radiation_fee          Float             @default(0)
+  totalAmount1           Float             @default(0)
+  totalAmount1_dollars   Float             @default(0)
+  freight_amount         Float             @default(0)
+  freight_amount_dollars Float             @default(0)
+  net_total_amount       Float             @default(0)
+  net_total_amount_dollars Float           @default(0)
+  imagePath              String            @db.Text    @default("")
+  added_by               Int               @default(0)
+  admin_id               Int               @default(0)
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+  Admin                  Admin             @relation("AdminContainerBookings", fields: [admin_id], references: [id], onDelete: Cascade)
+  containerDetails       ContainerDetail[]
+}
+
+model ContainerDetail {
+  id               Int               @id @default(autoincrement())
+  consigneeName    String
+  notifyParty      String
+  shipperPer       String
+  bookingNo        String
+  note             String            @db.Text    @default("")
+  imagePath        String            @db.Text    @default("")
+  added_by         Int               @default(0)
+  admin_id         Int               @default(0)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  containerBookingId Int?
+  Admin            Admin             @relation("AdminContainerDetails", fields: [admin_id], references: [id], onDelete: Cascade)
+  containerBooking ContainerBooking? @relation(fields: [containerBookingId], references: [id])
+  containerItems   ContainerItemDetail[]
+
+  @@index([admin_id])
+  @@index([containerBookingId])
+}
+
+model ContainerItemDetail {
+  id              Int               @id @default(autoincrement())
+  itemNo          String
+  chassisNo       String
+  year            String
+  color           String
+  cc              String
+  amount          Float             @default(0)
+  vehicleId       Int
+  containerDetailId Int?
+  added_by        Int               @default(0)
+  admin_id        Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  vehicle         AddVehicle        @relation(fields: [vehicleId], references: [id])
+  containerDetail ContainerDetail?  @relation(fields: [containerDetailId], references: [id])
+  Admin           Admin             @relation("AdminContainerItems", fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([containerDetailId])
+  @@index([admin_id])
+}
+
+model Invoice {
+  id              Int           @id @default(autoincrement())
+  date            DateTime
+  number          Int           @unique   
+  status          InvoiceStatus @default(UNPAID)
+  auctionHouse    String
+  imagePath       String        @db.Text @default("")
+  amountYen       Float         @default(0)
+  amount_doller   Float         @default(0)
+  added_by        Int
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  vehicles        AddVehicle[]  // Add this to define the one-to-many relationship
+}
+
+model AddVehicle {
+  id                   Int           @id @default(autoincrement())
+  invoiceId            Int           // Add this as the foreign key
+  invoice              Invoice       @relation(fields: [invoiceId], references: [id]) // Define the relation
+  chassisNo            String
+  maker                String
+  year                 String
+  color                String
+  engineType           String
+  auction_amount       Float         @default(0)
+  tenPercentAdd        Float         @default(0)
+  recycleAmount        Float         @default(0)
+  auction_house        String        @default("")
+  bidAmount            Float         @default(0)
+  bidAmount10per       Float         @default(0)
+  commissionAmount     Float         @default(0)
+  numberPlateTax       Float         @default(0)
+  repairCharges        Float         @default(0)
+  totalAmount_yen      Float         @default(0)
+  totalAmount_dollers  Float         @default(0)
+  sendingPort          Int?     
+  seaPort              SeaPort?      @relation("SeaPortVehicles", fields: [sendingPort], references: [id])
+  additionalAmount     Float         @default(0)
+  isDocumentRequired   String
+  documentReceiveDate  DateTime?
+  isOwnership          String
+  ownershipDate        DateTime?
+  status               VehicleStatus @default(Pending)
+  admin_id             Int    @default(0)          // Added admin_id field
+  admin                Admin         @relation(fields: [admin_id], references: [id]) // Foreign key relation
+  vehicleImages        VehicleImage[]
+  added_by             Int           @default(0)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  containerItems       ContainerItemDetail[]
+}
+
+model VehicleImage {
+  id           Int      @id @default(autoincrement())
+  addVehicleId Int
+  imagePath    String   @db.Text
+  addVehicle   AddVehicle @relation(fields: [addVehicleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+
+
+
+// Transport Model
+model Transport {
+  id            Int      @id @default(autoincrement())
+  date          DateTime
+  deliveryDate  DateTime
+  port          String
+  company       String
+  amount           Float    @default(0)
+  tenPercentAdd         Float    @default(0)
+  totalamount    Float    @default(0)
+  totaldollers  Float @default(0)
+  imagePath     String   @db.Text @default("")
+  vehicleNo     String
+  admin_id      Int      @default(0) // Replaced added_by with admin_id as foreign key
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  Admin         Admin    @relation("AdminTransports", fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id])
+}
+
+// Inspection Model (Unchanged, kept for reference)
+model Inspection {
+  id                     Int      @id @default(autoincrement())
+  vehicleNo              String
+  company                String
+  date                   DateTime
+  invoice_amount         Float    @default(0)
+  invoice_tax         Float    @default(0)
+  invoice_total       Float    @default(0)
+  invoice_amount_dollers Float    @default(0)
+  vamount_doller         Float    @default(0)
+  invoiceno              String
+  imagePath              String   @db.Text @default("")
+  admin_id               Int
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  Admin                  Admin    @relation("AdminInspections", fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id])
+}
+
+
+
+
+// PortCollect Model (Updated relation name)
+model PortCollect {
+  id            Int      @id @default(autoincrement())
+  vehicleNo     String
+  date          DateTime
+  freight_amount Float  @default(0)
+  port_charges  Float    @default(0)
+  clearingcharges Float  @default(0)
+  othercharges  Float    @default(0)
+  totalAmount   Float    @default(0)
+  vamount       Float 
+  invoiceno     String
+  imagePath     String   @db.Text @default("")
+  admin_id      Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  Admin         Admin    @relation("AdminPortCollects", fields: [admin_id], references: [id], onDelete: Cascade) // Changed relation name
+
+  @@index([admin_id])
+}
+
+
+
+// ShowRoom_Vehicle Model (Updated relation name)
+model ShowRoom_Vehicle {
+  id              Int      @id @default(autoincrement())
+  vehicleNo       String
+  date            DateTime
+  Transport_charges Float  @default(0)
+  othercharges    Float    @default(0)
+  totalAmount    Float    @default(0)
+  vRepair_charges  Float    @default(0)
+  vamount      Float  @default(0)
+  vtotalAmount     Float    @default(0)
+  imagePath       String   @db.Text @default("")
+  admin_id        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  Admin           Admin    @relation("AdminShowroomVehicles", fields: [admin_id], references: [id], onDelete: Cascade) // Changed relation name
+
+  @@index([admin_id])
+}
+
+
+// Sale_Vehicle Model (Updated relation name)
+model Sale_Vehicle {
+  id              Int      @id @default(autoincrement())
+  vehicleNo       String
+  date            DateTime
+  commission_amount Float  @default(0)
+  othercharges    Float    @default(0)
+  totalAmount     Float    @default(0)
+  mobileno        String   @default("")
+  passportNo      String   @default("")
+  fullname        String   @default("")
+  details         String   @db.Text @default("")
+  sale_price      Float
+  imagePath       String   @db.Text @default("")
+  admin_id        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  Admin           Admin    @relation("AdminSaleVehicles", fields: [admin_id], references: [id], onDelete: Cascade) // Changed relation name
+
+  @@index([admin_id])
+}
+
+
+
+model SeaPort {
+  id        Int      @id @default(autoincrement())
+  name      String   @default("")
+  location  String?  @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  admin_id  Int      @default(0)
+
+  // Define Foreign Key Relation
+  admin     Admin    @relation(fields: [admin_id], references: [id])
+
+  vehicles  AddVehicle[] @relation("SeaPortVehicles") // Opposite relation field
+}
+
+model Distributor {
+  id         Int              @id @default(autoincrement())
+  name       String
+  location   String
+  username   String           @unique
+  password   String           // Hash in app logic
+  balance    Float            @default(0)
+  status     DistributorStatus @default(ACTIVE)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+}
+
+model Ledger {
+  id             Int      @id @default(autoincrement()) // Primary key with auto-increment
+  admin_id       Int      // Foreign key to the Admin table (replaces distributorId)
+  debit          Float    @default(0.0) // Amount debited
+  credit         Float    @default(0.0) // Amount credited
+  balance        Float    @default(0.0) // Current balance
+  description    String?  @db.VarChar(255) // Description of the transaction
+  transaction_at DateTime @default(now())
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  Admin          Admin    @relation("AdminLedger", fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id])
+}
+
+
+
+model VehicleConsignment {
+  id             Int      @id @default(autoincrement())
+  containerId    Int
+  sealNo         String
+  invoiceTo      String
+  shipper        String
+  date           DateTime
+  refNo          String
+  equipNo        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CustomerInformation {
+  id           Int      @id @default(autoincrement())
+  customerNo   String   // Changed from Int for flexibility
+  mobileNo     String   // Changed from Int for phone numbers
+  passportNo   String   // Changed from Int for alphanumeric support
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SaleVehicleInformation {
+  id            Int      @id @default(autoincrement())
+  commission    Decimal
+  repairCost    Decimal
+  price         Decimal
+  status        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  username   String   @db.VarChar(255) @unique
+  password   String   @db.VarChar(255) // Hash in app logic
+  fullname   String   @db.VarChar(255)
+  token      String   @db.VarChar(255)
+  createdAt  DateTime @default(now()) @db.Timestamp(0)
+  updatedAt  DateTime @updatedAt @db.Timestamp(0)
+  role       String   @db.VarChar(255)
+  status     String   @default("Active") @db.VarChar(255)
+  terminal   Int
+}
+
+
+
+model RizwanCars {
+  id         Int      @id @default(autoincrement())
+  balance    Float   @default(0)
+  title   String 
+  createdAt  DateTime @default(now()) @db.Timestamp(0)
+  updatedAt  DateTime @updatedAt @db.Timestamp(0)
+}
+
+
+
+model Expenses {
+  id                  Int      @id @default(autoincrement())
+  adminId            Int     @default(0)   // Replaced user_id with adminId
+  expense_title      String 
+  expense_description String   @db.Text @default("")
+  imagePath          String   @db.Text @default("")
+  amount            Float    @default(0)
+  added_by          Int
+  createdAt         DateTime @default(now()) @db.Timestamp(0)
+  updatedAt         DateTime @updatedAt @db.Timestamp(0)
+  admin             Admin    @relation("AdminExpenses", fields: [added_by], references: [id]) // Foreign key relation via added_by
+}
+
+
+model BankAccounts {
+  id            Int      @id @default(autoincrement()) // Auto-incrementing primary key
+  bank_title    String // Title of the bank
+  account_title String // Title of the account (e.g., Savings, Checking)
+  account_no    String // Account number (you can add @unique if the account numbers must be unique)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt // Automatically updates when the record is updated
+}
+
+
+
+
+// PaymentRequests Model
+model PaymentRequests {
+  id            Int      @id @default(autoincrement())
+  admin_id      Int      // Replaced userid with admin_id as foreign key
+  transactionno String   @unique
+  img_url       String   @db.Text
+  status        String
+  verified_by   String?
+  amount        Float
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+  Admin         Admin    @relation("AdminPaymentRequests", fields: [admin_id], references: [id], onDelete: Cascade)
+
+  @@index([admin_id])
+}
+
+
+
