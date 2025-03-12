@@ -1,24 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/utils/prisma";
 
-import { NextResponse } from "next/server";
-
-// Attempt to import prisma client
-let prisma;
-try {
-  prisma = require("@/lib/prisma").default;
-  if (!prisma || typeof prisma.findUnique !== "function") {
-    throw new Error("Prisma client is not properly initialized");
-  }
-  console.log("Prisma client loaded successfully");
-} catch (error) {
-  console.error("Failed to load Prisma client:", error.message, error.stack);
-  return NextResponse.json(
-    { message: "Internal server error: Prisma client not initialized", error: true, details: error.message },
-    { status: 500 }
-  );
-}
-
 export async function POST(request) {
   try {
     const data = await request.json();
@@ -53,8 +35,8 @@ export async function POST(request) {
 
     // Ensure vehicle exists and is not already sold
     console.log("Fetching vehicle with vehicleNo:", data.vehicleNo);
-    const vehicle = await prisma.vehicle.findUnique({
-      where: { vehicleNo: data.vehicleNo },
+    const vehicle = await prisma.addVehicle.findUnique({
+      where: { id: parseInt(data.vehicleNo) },
     });
     if (!vehicle) {
       console.error("Vehicle not found for vehicleNo:", data.vehicleNo);
@@ -113,8 +95,8 @@ export async function POST(request) {
         }),
 
         // Update the vehicle status to "Sold"
-        prisma.vehicle.update({
-          where: { vehicleNo: data.vehicleNo },
+        prisma.addVehicle.update({
+          where: { id: parseInt(data.vehicleNo) },
           data: { status: "Sold" },
         }),
 
@@ -165,7 +147,7 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
-  
+    console.error("Transaction error:", error.message, error.stack);
     return NextResponse.json(
       {
         message: "Failed to save sale vehicle",
