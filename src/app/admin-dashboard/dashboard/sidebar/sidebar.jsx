@@ -128,8 +128,8 @@ const Sidebar = () => {
       subitems: [
         { title: "New Invoice", path: "/admin-dashboard/invoice-form/newinvoice", icon: <IoIosAddCircle />, roles: ["admin", "sub admin"] }, // Adjust as needed
         { title: "Invoice's List", path: "/admin-dashboard/invoice-form", icon: <FaListOl />, roles: ["admin", "sub admin"] },
-        { title: "Incomplete Invoices", path: "/admin-dashboard/invoice-form", icon: <FaListOl />, roles: ["admin", "sub admin"] }, // Add subfolder if needed
-      ],
+      //   { title: "Incomplete Invoices", path: "/admin-dashboard/invoice-form", icon: <FaListOl />, roles: ["admin", "sub admin"] }, // Add subfolder if needed
+       ],
     },
     {
       title: "Vehicle Management",
@@ -250,7 +250,7 @@ const Sidebar = () => {
         {/* Analytics Item */}
         <ListItem disablePadding>
           <ListItemButton
-            onClick={() => handleNavigation("/admin-dashboard/analytics")}
+            onClick={() => handleNavigation("/admin-dashboard")}
             sx={{
               borderRadius: 1,
               "&:hover": { bgcolor: "action.hover" },

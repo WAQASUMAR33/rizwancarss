@@ -34,7 +34,7 @@ const LoginModal = ({ isOpen, onClose, role }) => {
 
   useEffect(() => {
       if (userrole === 'admin' || userrole === 'superadmin') {
-        router.push('/admin-dashboard/analytics');
+        router.push('/admin-dashboard');
       } else if (userrole === 'agent') {
         router.push('/agent-dashboard/Analytics');
       }
@@ -65,10 +65,10 @@ const LoginModal = ({ isOpen, onClose, role }) => {
         setTimeout(() => {
           // Redirect based on role
           if (data.user.role === 'admin' || userrole === 'superadmin') {
-            router.push('/admin-dashboard/analytics');
+            router.push('/admin-dashboard');
           } else if (data.user.role === 'agent')    
           {
-            router.push('/agent-dashboard/Analytics');
+            router.push('/agent-dashboard');
           }
         }, 1500);
           //  if (data.user.role === 'agent')    

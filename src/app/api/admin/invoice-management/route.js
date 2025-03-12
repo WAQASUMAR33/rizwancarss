@@ -38,7 +38,7 @@ export async function POST(request) {
         // Create invoice
         const invoiceData = {
           date: new Date(body.date),
-          number: parseInt(body.number, 10),
+          number: body.number,
           status: body.status || "UNPAID",
           auctionHouse: body.auctionHouse || "",
           imagePath: body.imagePath || "",

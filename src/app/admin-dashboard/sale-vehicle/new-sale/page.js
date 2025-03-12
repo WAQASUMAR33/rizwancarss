@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { toast, ToastContainer } from 'react-toastify';
+import { useState, useEffect } from "react";
+import { toast, ToastContainer } from "react-toastify";
 import {
   Container,
   Typography,
@@ -19,10 +19,10 @@ import {
   TableCell,
   TableBody,
   useTheme,
-} from '@mui/material';
-import { styled } from '@mui/material/styles';
-import 'react-toastify/dist/ReactToastify.css';
-import { useSelector } from 'react-redux';
+} from "@mui/material";
+import { styled } from "@mui/material/styles";
+import "react-toastify/dist/ReactToastify.css";
+import { useSelector } from "react-redux";
 
 // Custom styled components
 const StyledCard = styled(Card)(({ theme }) => ({
@@ -45,22 +45,22 @@ const StyledTable = styled(Table)(({ theme }) => ({
 
 export default function SaleVehicle() {
   const admin_id = useSelector((state) => state.user.id); // Get admin_id from Redux
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [vehicle, setVehicle] = useState(null); // Store the searched vehicle
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     admin_id: admin_id,
-    vehicleNo: '',
-    date: new Date().toISOString().split('T')[0], // Default to today
+    vehicleNo: "",
+    date: new Date().toISOString().split("T")[0], // Default to today
     commission_amount: 0,
     othercharges: 0,
-    totalAmount: 0,
-    mobileno: '',
-    passportNo: '',
-    fullname: '',
-    details: '',
+    totalAmount: 0, // Will be calculated as commission_amount + othercharges
+    mobileno: "",
+    passportNo: "",
+    fullname: "",
+    details: "",
     sale_price: 0,
-    imagePath: '',
+    imagePath: "",
   });
   const theme = useTheme();
 
@@ -69,17 +69,29 @@ export default function SaleVehicle() {
     setFormData((prev) => ({ ...prev, admin_id }));
   }, [admin_id]);
 
+  // Calculate totalAmount as commission_amount + othercharges (excluding sale_price)
+  useEffect(() => {
+    const commission = parseFloat(formData.commission_amount) || 0;
+    const otherCharges = parseFloat(formData.othercharges) || 0;
+    const newTotalAmount = commission + otherCharges;
+
+    setFormData((prev) => ({
+      ...prev,
+      totalAmount: parseFloat(newTotalAmount.toFixed(2)), // Round to 2 decimal places
+    }));
+  }, [formData.commission_amount, formData.othercharges]);
+
   const handleSearch = async (e) => {
     e.preventDefault();
     if (!searchQuery) {
-      toast.error('Please enter a vehicle number to search');
+      toast.error("Please enter a vehicle number to search");
       return;
     }
 
     setLoading(true);
     try {
       const response = await fetch(`/api/admin/sale/search?query=${searchQuery}`);
-      if (!response.ok) throw new Error('Vehicle not found');
+      if (!response.ok) throw new Error("Vehicle not found");
       const result = await response.json();
 
       if (result.status && result.data) {
@@ -89,12 +101,12 @@ export default function SaleVehicle() {
           vehicleNo: result.data.vehicleId.toString(), // Using vehicleId as vehicleNo
           details: `Chassis: ${result.data.chassisNo}, Year: ${result.data.year}, Color: ${result.data.color}, CC: ${result.data.cc}`,
         }));
-        toast.success('Vehicle found!');
+        toast.success("Vehicle found!");
       } else {
-        throw new Error('Invalid response format');
+        throw new Error("Invalid response format");
       }
     } catch (err) {
-      toast.error(err.message || 'Failed to find vehicle');
+      toast.error(err.message || "Failed to find vehicle");
       setVehicle(null);
     } finally {
       setLoading(false);
@@ -105,7 +117,7 @@ export default function SaleVehicle() {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'commission_amount' || name === 'othercharges' || name === 'sale_price' || name === 'totalAmount'
+      [name]: name === "commission_amount" || name === "othercharges" || name === "sale_price"
         ? parseFloat(value) || 0
         : value,
     }));
@@ -118,7 +130,7 @@ export default function SaleVehicle() {
     try {
       const imageUrl = await uploadImage(file);
       setFormData((prev) => ({ ...prev, imagePath: imageUrl }));
-      toast.success('Image uploaded successfully!');
+      toast.success("Image uploaded successfully!");
     } catch (error) {
       toast.error(`Image upload failed: ${error}`);
     }
@@ -130,11 +142,11 @@ export default function SaleVehicle() {
       reader.onload = async () => {
         try {
           const response = await fetch(`${process.env.NEXT_PUBLIC_IMAGE_UPLOAD_API}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ image: reader.result }),
           });
-          if (!response.ok) throw new Error('Failed to upload image');
+          if (!response.ok) throw new Error("Failed to upload image");
           const data = await response.json();
           resolve(data.image_url);
         } catch (error) {
@@ -152,7 +164,7 @@ export default function SaleVehicle() {
 
     try {
       if (!formData.admin_id || !formData.vehicleNo || !formData.date || !formData.sale_price) {
-        throw new Error('Please fill all required fields (Admin ID, Vehicle No, Date, Sale Price)');
+        throw new Error("Please fill all required fields (Admin ID, Vehicle No, Date, Sale Price)");
       }
 
       const payload = {
@@ -170,34 +182,34 @@ export default function SaleVehicle() {
         imagePath: formData.imagePath,
       };
 
-      const response = await fetch('/api/admin/sale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/admin/sale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to save sale vehicle');
+        throw new Error(errorData.message || "Failed to save sale vehicle");
       }
 
-      toast.success('Sale vehicle saved successfully!');
+      toast.success("Sale vehicle saved successfully!");
       setFormData({
         admin_id: admin_id,
-        vehicleNo: '',
-        date: new Date().toISOString().split('T')[0],
+        vehicleNo: "",
+        date: new Date().toISOString().split("T")[0],
         commission_amount: 0,
         othercharges: 0,
         totalAmount: 0,
-        mobileno: '',
-        passportNo: '',
-        fullname: '',
-        details: '',
+        mobileno: "",
+        passportNo: "",
+        fullname: "",
+        details: "",
         sale_price: 0,
-        imagePath: '',
+        imagePath: "",
       });
       setVehicle(null);
-      setSearchQuery('');
+      setSearchQuery("");
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -234,7 +246,7 @@ export default function SaleVehicle() {
                   disabled={loading}
                   startIcon={loading && <CircularProgress size={20} />}
                 >
-                  {loading ? 'Searching...' : 'Search'}
+                  {loading ? "Searching..." : "Search"}
                 </Button>
               </Stack>
               {vehicle && (
@@ -347,10 +359,10 @@ export default function SaleVehicle() {
                   </Grid>
                   <Grid item xs={12} md={3}>
                     <TextField
-                      label="Total Amount"
+                      label="Total Amount (Commission + Other Charges)"
                       name="totalAmount"
                       value={formData.totalAmount}
-                      onChange={handleChange}
+                      InputProps={{ readOnly: true }} // Make it read-only since it's calculated
                       fullWidth
                       variant="outlined"
                       type="number"
@@ -407,7 +419,7 @@ export default function SaleVehicle() {
                       onChange={handleImageChange}
                       fullWidth
                       variant="outlined"
-                      inputProps={{ accept: 'image/*' }}
+                      inputProps={{ accept: "image/*" }}
                     />
                   </Grid>
                   {formData.imagePath && (
@@ -416,7 +428,7 @@ export default function SaleVehicle() {
                         <img
                           src={`${process.env.NEXT_PUBLIC_IMAGE_UPLOAD_PATH}/${formData.imagePath}`}
                           alt="Uploaded Image"
-                          style={{ maxWidth: '100%', height: 'auto', borderRadius: theme.shape.borderRadius }}
+                          style={{ maxWidth: "100%", height: "auto", borderRadius: theme.shape.borderRadius }}
                         />
                       </Box>
                     </Grid>
@@ -430,7 +442,7 @@ export default function SaleVehicle() {
                       disabled={loading}
                       startIcon={loading && <CircularProgress size={20} />}
                     >
-                      {loading ? 'Saving...' : 'Save Sale Vehicle'}
+                      {loading ? "Saving..." : "Save Sale Vehicle"}
                     </Button>
                   </Grid>
                 </Grid>

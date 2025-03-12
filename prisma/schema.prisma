@@ -141,7 +141,7 @@ model ContainerItemDetail {
 model Invoice {
   id              Int           @id @default(autoincrement())
   date            DateTime
-  number          Int           @unique   
+  number          String            @default("")
   status          InvoiceStatus @default(UNPAID)
   auctionHouse    String
   imagePath       String        @db.Text @default("")

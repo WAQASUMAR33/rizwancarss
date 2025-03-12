@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   TextField,
   Button,
@@ -103,11 +103,11 @@ export default function NewBookingForm() {
     );
   }, []);
 
-  // Update vehicle totals when vehicle data or exchangeRate changes
-  useEffect(() => {
-    if (!exchangeRate) return;
+  // Calculate updated vehicles with totals using useMemo
+  const updatedVehicles = useMemo(() => {
+    if (!exchangeRate) return invoiceData.vehicles;
 
-    const updatedVehicles = invoiceData.vehicles.map((vehicle) => {
+    return invoiceData.vehicles.map((vehicle) => {
       const auction_amount = parseFloat(vehicle.auction_amount) || 0;
       const bidAmount = parseFloat(vehicle.bidAmount) || 0;
       const tenPercentAdd = auction_amount * 0.1;
@@ -139,24 +139,13 @@ export default function NewBookingForm() {
         totalAmount_dollers: parseFloat(totalAmount_dollers.toFixed(2)),
       };
     });
-
-    setInvoiceData((prev) => ({
-      ...prev,
-      vehicles: updatedVehicles,
-    }));
   }, [invoiceData.vehicles, exchangeRate]);
 
-  // Update invoice amount_doller when amountYen or exchangeRate changes
-  useEffect(() => {
-    if (!exchangeRate || !invoiceData.amountYen) return;
-
+  // Calculate amount_doller dynamically
+  const amountDoller = useMemo(() => {
+    if (!exchangeRate || !invoiceData.amountYen) return invoiceData.amount_doller || 0;
     const amountYen = parseFloat(invoiceData.amountYen) || 0;
-    const amountDoller = amountYen * exchangeRate;
-
-    setInvoiceData((prev) => ({
-      ...prev,
-      amount_doller: parseFloat(amountDoller.toFixed(2)),
-    }));
+    return parseFloat((amountYen * exchangeRate).toFixed(2));
   }, [invoiceData.amountYen, exchangeRate]);
 
   const handleInputChange = (field, value) => {
@@ -164,6 +153,7 @@ export default function NewBookingForm() {
       const updatedData = { ...prev, [field]: value };
       if (field === "amountYen") {
         updatedData.amountYen = parseFloat(value) || 0;
+        updatedData.amount_doller = parseFloat((updatedData.amountYen * exchangeRate).toFixed(2)) || 0;
       } else if (field === "amount_doller") {
         updatedData.amount_doller = parseFloat(value) || 0;
         if (exchangeRate) {
@@ -291,9 +281,7 @@ export default function NewBookingForm() {
       let jsonPayload = { ...invoiceData };
 
       if (!jsonPayload.number || jsonPayload.number === "") throw new Error("Invoice number is required.");
-      jsonPayload.number = parseInt(jsonPayload.number, 10);
-      if (isNaN(jsonPayload.number)) throw new Error("Invoice number must be a valid integer.");
-
+   
       jsonPayload.amountYen = parseFloat(jsonPayload.amountYen) || 0;
       jsonPayload.amount_doller = parseFloat(jsonPayload.amount_doller) || 0;
       jsonPayload.added_by = parseInt(userid);
@@ -306,8 +294,8 @@ export default function NewBookingForm() {
         jsonPayload.imagePath = "";
       }
 
-      const updatedVehicles = await Promise.all(
-        invoiceData.vehicles.map(async (vehicle, index) => {
+      const updatedVehiclesForSubmit = await Promise.all(
+        updatedVehicles.map(async (vehicle, index) => {
           let updatedVehicle = { ...vehicle };
           delete updatedVehicle.vehicleImagePreviews;
 
@@ -360,11 +348,11 @@ export default function NewBookingForm() {
         })
       );
 
-      jsonPayload.vehicles = updatedVehicles;
+      jsonPayload.vehicles = updatedVehiclesForSubmit;
+      jsonPayload.amount_doller = amountDoller;
 
       console.log("JSON Payload to be sent:", JSON.stringify(jsonPayload, null, 2));
 
-      // Update the endpoint to match your API structure
       const response = await fetch("/api/admin/invoice-management", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -379,7 +367,6 @@ export default function NewBookingForm() {
       const jsonResponse = JSON.parse(textResponse);
       console.log("Parsed JSON response:", jsonResponse);
 
-      // Clear form data on successful submission
       setInvoiceImagePreview(null);
       setInvoiceData({
         date: "",
@@ -392,7 +379,7 @@ export default function NewBookingForm() {
         added_by: userid || "",
         vehicles: [],
       });
-      
+
       alert("Invoice and vehicles added successfully!");
     } catch (error) {
       console.error("Error submitting invoice:", error);
@@ -423,7 +410,6 @@ export default function NewBookingForm() {
     );
   }
 
-  // The rest of the JSX (UI) remains unchanged
   return (
     <Box sx={{ p: 2, bgcolor: "#f1f6f9" }}>
       <Typography variant="h4" gutterBottom>
@@ -445,7 +431,7 @@ export default function NewBookingForm() {
             fullWidth
           />
           <TextField
-            type="number"
+            type="text"
             label="Invoice Number"
             variant="outlined"
             value={invoiceData.number}
@@ -465,7 +451,7 @@ export default function NewBookingForm() {
             type="number"
             label="Total Amount (Dollar)"
             variant="outlined"
-            value={invoiceData.amount_doller}
+            value={amountDoller}
             onChange={(e) => handleInputChange("amount_doller", e.target.value)}
             fullWidth
           />
@@ -487,7 +473,8 @@ export default function NewBookingForm() {
             onChange={(e) => handleInputChange("auctionHouse", e.target.value)}
             fullWidth
           />
-          <Box gridColumn="span 1">
+
+
             <TextField
               type="file"
               variant="outlined"
@@ -496,7 +483,10 @@ export default function NewBookingForm() {
               fullWidth
               label="Upload Invoice Image"
             />
-            {invoiceImagePreview && (
+            
+        
+          
+          {invoiceImagePreview && (
               <Box mt={2}>
                 <img
                   src={invoiceImagePreview}
@@ -505,6 +495,10 @@ export default function NewBookingForm() {
                 />
               </Box>
             )}
+          
+          <Box gridColumn="span 2">
+           
+            
           </Box>
         </Box>
       </Paper>
@@ -522,7 +516,7 @@ export default function NewBookingForm() {
         >
           Add Vehicle
         </Button>
-        {invoiceData.vehicles.map((vehicle, index) => (
+        {updatedVehicles.map((vehicle, index) => (
           <Paper key={index} elevation={1} sx={{ p: 2, mb: 2, bgcolor: "#f5f5f5" }}>
             <Box display="grid" gridTemplateColumns="repeat(6, 1fr)" gap={2}>
               <TextField
@@ -744,9 +738,7 @@ export default function NewBookingForm() {
                   label="Status"
                 >
                   <MenuItem value="Pending">Pending</MenuItem>
-                  <MenuItem value="Approved">Approved</MenuItem>
-                  <MenuItem value="Shipped">Shipped</MenuItem>
-                  <MenuItem value="Delivered">Delivered</MenuItem>
+                
                 </Select>
               </FormControl>
               <TextField
