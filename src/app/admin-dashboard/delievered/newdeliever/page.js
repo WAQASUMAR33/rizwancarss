@@ -17,16 +17,17 @@ import {
 import { ClipLoader } from "react-spinners";
 import SaveIcon from "@mui/icons-material/Save";
 import SearchIcon from "@mui/icons-material/Search";
+import Autocomplete from "@mui/material/Autocomplete";
 
 const DeliveredVehicle = () => {
-  const [vehicleSearch, setVehicleSearch] = useState("");
+  const [vehicleSearch, setVehicleSearch] = useState(null);
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [charges, setCharges] = useState({
-    Transport_charges: 0, // Default to 0 to match schema default
-    othercharges: 0,     // Default to 0 to match schema default
+    Transport_charges: 0,
+    othercharges: 0,
   });
   const [totalAmount, setTotalAmount] = useState(0);
   const [amountPerVehicle, setAmountPerVehicle] = useState(0);
@@ -35,80 +36,44 @@ const DeliveredVehicle = () => {
     imageFile: null,
     imagePreview: null,
     imagePath: "",
-    admin_id: 1, // Default admin_id to match schema relation
+    admin_id: 1,
   });
+  const [allVehicles, setAllVehicles] = useState([]);
 
-  // Search for a vehicle by chassisNo
-  const searchVehicle = async () => {
-    if (!vehicleSearch.trim()) {
-      setError("Please enter a Chassis No to search.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/admin/deliever/search?query=${encodeURIComponent(vehicleSearch)}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch vehicle: ${response.statusText}`);
-      }
-      const result = await response.json();
-      console.log("Search API response:", JSON.stringify(result, null, 2));
-
-      if (result.status && result.data) {
-        // Map vehicleId to id to align with ShowRoom_Vehicle schema
-        const vehicle = {
-          ...result.data,
-          id: result.data.vehicleId, // Map vehicleId to id
-          vehicleNo: result.data.chassisNo,
-          date: new Date().toISOString().split("T")[0], // Default date
-          Transport_charges: 0, // Match schema default
-          othercharges: 0,     // Match schema default
-          totalAmount: 0,      // Match schema default
-          vRepair_charges: 0,  // Match schema default
-          vamount: 0,          // Match schema default (will be set as divided amount)
-          vtotalAmount: 0,     // Match schema default
-          imagePath: "",       // Match schema default
-          admin_id: 0,         // Default admin_id (will be overridden by portCollect.admin_id on save)
-        };
-        console.log("Vehicle object to add:", JSON.stringify(vehicle, null, 2));
-        if (vehicles.some((v) => v.vehicleNo === vehicle.vehicleNo)) {
-          setError("This vehicle is already added.");
-        } else {
-          setVehicles((prev) => {
-            const updatedVehicles = [...prev, vehicle];
-            console.log("Updated vehicles state:", JSON.stringify(updatedVehicles, null, 2));
-            return updatedVehicles;
-          });
-          setVehicleSearch("");
+  // Fetch all vehicles on mount
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch("/api/admin/vehicles");
+        if (!response.ok) {
+          throw new Error(`Failed to fetch vehicles: ${response.statusText}`);
         }
-      } else {
-        throw new Error(result.error || "No vehicle found.");
+        const result = await response.json();
+        const fetchedVehicles = result.data || [];
+        console.log("Fetched vehicles:", fetchedVehicles.map((v) => ({ id: v.id, chassisNo: v.chassisNo })));
+        setAllVehicles(fetchedVehicles);
+      } catch (err) {
+        console.error("Fetch vehicles error:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("Search error:", err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle input changes for vehicle search
-  const handleVehicleSearchChange = (e) => {
-    setVehicleSearch(e.target.value);
-  };
+    };
+    fetchVehicles();
+  }, []);
 
   // Handle input changes for charges
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setCharges((prev) => ({
       ...prev,
-      [name]: value === "" ? 0 : parseFloat(value) || 0, // Default to 0 if empty or invalid
+      [name]: value === "" ? 0 : parseFloat(value) || 0,
     }));
   };
 
-  // Handle input changes for PortCollect fields, including image preview
+  // Handle input changes for PortCollect fields
   const handlePortCollectChange = (e) => {
     const { name, value, files } = e.target;
     if (name === "imageFile" && files && files[0]) {
@@ -127,7 +92,7 @@ const DeliveredVehicle = () => {
     }
   };
 
-  // Handle changes to vRepair_charges for individual vehicles
+  // Handle changes to vRepair_charges
   const handleRepairChargeChange = (vehicleNo, value) => {
     const updatedVehicles = vehicles.map((vehicle) =>
       vehicle.vehicleNo === vehicleNo
@@ -137,7 +102,7 @@ const DeliveredVehicle = () => {
     setVehicles(updatedVehicles);
   };
 
-  // Handle changes to vamount for individual vehicles (disabled for now, set from amountPerVehicle)
+  // Handle changes to vamount (disabled)
   const handleVamountChange = (vehicleNo, value) => {
     const updatedVehicles = vehicles.map((vehicle) =>
       vehicle.vehicleNo === vehicleNo
@@ -161,21 +126,13 @@ const DeliveredVehicle = () => {
     setVehicles((prev) => prev.filter((v) => v.vehicleNo !== vehicleNo));
   };
 
-  // Convert file to Base64 (full data URL)
+  // Convert file to Base64
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64String = reader.result;
-        console.log("Base64 conversion successful, length:", base64String.length);
-        console.log("Base64 snippet:", base64String.substring(0, 50));
-        resolve(base64String);
-      };
-      reader.onerror = (error) => {
-        console.error("FileReader error:", error);
-        reject(error);
-      };
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = (error) => reject(error);
     });
   };
 
@@ -183,27 +140,18 @@ const DeliveredVehicle = () => {
   const uploadImageToServer = async (base64Image) => {
     try {
       const uploadApiUrl = process.env.NEXT_PUBLIC_IMAGE_UPLOAD_API;
-      console.log("Uploading to:", uploadApiUrl);
-      console.log("Base64 image length:", base64Image.length);
-      console.log("Base64 snippet:", base64Image.substring(0, 50));
-
       const response = await fetch(uploadApiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64Image }),
       });
       const data = await response.json();
-      console.log("Upload response:", data);
-
       if (!response.ok || !data.image_url) {
         throw new Error(data.error || "Failed to upload image");
       }
-
       const fullPath = `${process.env.NEXT_PUBLIC_IMAGE_UPLOAD_PATH}/${data.image_url}`;
-      console.log("Image uploaded successfully, path:", fullPath);
       return fullPath;
     } catch (error) {
-      console.error("Image upload error:", error);
       throw error;
     }
   };
@@ -218,14 +166,47 @@ const DeliveredVehicle = () => {
     const perVehicle = totalVehicles > 0 ? total / totalVehicles : 0;
     setAmountPerVehicle(perVehicle);
 
-    // Update vamount for all vehicles based on the divided amount
     setVehicles((prev) =>
       prev.map((vehicle) => ({
         ...vehicle,
-        vamount: perVehicle, // Set vamount as the divided amount
+        vamount: perVehicle,
       }))
     );
   }, [charges, vehicles.length]);
+
+  // Add selected vehicle to the grid on selection
+  const addVehicle = (newValue) => {
+    if (!newValue) {
+      setError("Please select a vehicle to add.");
+      return;
+    }
+
+    const vehicle = {
+      ...newValue,
+      id: newValue.id, // Use id from API response
+      vehicleNo: newValue.chassisNo,
+      date: new Date().toISOString().split("T")[0],
+      Transport_charges: 0,
+      othercharges: 0,
+      totalAmount: 0,
+      vRepair_charges: 0,
+      vamount: 0,
+      vtotalAmount: 0,
+      imagePath: "",
+      admin_id: 0,
+    };
+
+    if (vehicles.some((v) => v.vehicleNo === vehicle.vehicleNo)) {
+      setError("This vehicle is already added.");
+    } else {
+      setVehicles((prev) => {
+        const updatedVehicles = [...prev, vehicle];
+        console.log("Added vehicle:", vehicle);
+        return updatedVehicles;
+      });
+      setVehicleSearch(null);
+    }
+  };
 
   // Save individual records for each vehicle
   const handleSave = async () => {
@@ -242,9 +223,7 @@ const DeliveredVehicle = () => {
       if (portCollect.imageFile) {
         const base64Image = await convertToBase64(portCollect.imageFile);
         imagePath = await uploadImageToServer(base64Image);
-        if (!imagePath) {
-          throw new Error("Image upload failed");
-        }
+        if (!imagePath) throw new Error("Image upload failed");
         setPortCollect((prev) => ({ ...prev, imagePath }));
       }
 
@@ -255,35 +234,25 @@ const DeliveredVehicle = () => {
         othercharges: charges.othercharges,
         totalAmount: amountPerVehicle + (vehicle.vRepair_charges || 0),
         vRepair_charges: vehicle.vRepair_charges || 0,
-        vamount: vehicle.vamount || 0, // Divided amount per vehicle
-        vtotalAmount: (vehicle.vamount || 0) + (vehicle.vRepair_charges || 0), // Total with repair charges
+        vamount: vehicle.vamount || 0,
+        vtotalAmount: (vehicle.vamount || 0) + (vehicle.vRepair_charges || 0),
         imagePath: imagePath || "",
         admin_id: portCollect.admin_id,
       }));
 
-      console.log("Saving vehicleData:", JSON.stringify(vehicleData, null, 2));
-
-      const response = await fetch("/api/admin/deliever", { // Updated endpoint
+      const response = await fetch("/api/admin/deliever", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(vehicleData),
       });
 
       const responseBody = await response.text();
-      console.log("Server response status:", response.status);
-      console.log("Server response body:", responseBody);
-
-      if (!response.ok) {
-        throw new Error(`Failed to save data: ${response.statusText} - ${responseBody}`);
-      }
+      if (!response.ok) throw new Error(`Failed to save data: ${response.statusText} - ${responseBody}`);
 
       const result = JSON.parse(responseBody);
       if (result.status) {
         alert(`Saved ${vehicles.length} vehicle records successfully!`);
-        setCharges({
-          Transport_charges: 0, // Reset to 0 to match schema default
-          othercharges: 0,     // Reset to 0 to match schema default
-        });
+        setCharges({ Transport_charges: 0, othercharges: 0 });
         setPortCollect({
           date: new Date().toISOString().split("T")[0],
           imageFile: null,
@@ -292,11 +261,11 @@ const DeliveredVehicle = () => {
           admin_id: 1,
         });
         setVehicles([]);
+        setVehicleSearch(null);
       } else {
         throw new Error(result.error || "Failed to save data.");
       }
     } catch (err) {
-      console.error("Save error:", err);
       setError(err.message);
     } finally {
       setSaving(false);
@@ -311,9 +280,7 @@ const DeliveredVehicle = () => {
 
       {/* Charges Input Form */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h6" gutterBottom>
-          Enter Charges
-        </Typography>
+        <Typography variant="h6" gutterBottom>Enter Charges</Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 2, mb: 2 }}>
           <TextField
             label="Date"
@@ -329,7 +296,7 @@ const DeliveredVehicle = () => {
             label="Transport Charges"
             name="Transport_charges"
             type="number"
-            value={charges.Transport_charges === "" ? 0 : charges.Transport_charges}
+            value={charges.Transport_charges}
             onChange={handleInputChange}
             variant="outlined"
             sx={{ flex: "1 1 200px" }}
@@ -339,12 +306,23 @@ const DeliveredVehicle = () => {
             label="Other Charges"
             name="othercharges"
             type="number"
-            value={charges.othercharges === "" ? 0 : charges.othercharges}
+            value={charges.othercharges}
             onChange={handleInputChange}
             variant="outlined"
             sx={{ flex: "1 1 200px" }}
             InputProps={{ inputProps: { min: 0, step: "0.01" } }}
           />
+
+         <TextField
+          label="Total Amount (Divided per Vehicle)"
+          value={totalAmount.toFixed(2)}
+          variant="outlined"
+          disabled
+          sx={{ maxWidth: "200px" }}
+          InputProps={{ startAdornment: "$" }}
+        />
+
+
           <TextField
             label="Upload Image"
             name="imageFile"
@@ -356,93 +334,68 @@ const DeliveredVehicle = () => {
             inputProps={{ accept: "image/*" }}
           />
         </Box>
-        {/* Image Preview */}
         {portCollect.imagePreview && (
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle1">Image Preview:</Typography>
-            <img
-              src={portCollect.imagePreview}
-              alt="Preview"
-              style={{ maxWidth: "300px", maxHeight: "300px", objectFit: "contain" }}
-            />
+            <img src={portCollect.imagePreview} alt="Preview" style={{ maxWidth: "300px", maxHeight: "300px", objectFit: "contain" }} />
           </Box>
         )}
-        <TextField
-          label="Total Amount (Divided per Vehicle)"
-          value={totalAmount.toFixed(2)}
-          variant="outlined"
-          disabled
-          sx={{ maxWidth: "200px" }}
-          InputProps={{ startAdornment: "$" }}
+        
+      </Box>
+
+      {/* Vehicle Selection with Autocomplete */}
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h6" gutterBottom>Add Vehicles</Typography>
+        <Autocomplete
+          options={allVehicles}
+          getOptionLabel={(option) => (option ? `${option.chassisNo} - ${option.year} (${option.color})` : "")}
+          value={vehicleSearch}
+          onChange={(event, newValue) => {
+            setVehicleSearch(newValue);
+            if (newValue) addVehicle(newValue);
+          }}
+          loading={loading}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Select Vehicle"
+              variant="outlined"
+              fullWidth
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: "25px",
+                  backgroundColor: "#f5f5f5",
+                  "&:hover fieldset": { borderColor: "#1976d2" },
+                  "&.Mui-focused fieldset": { borderColor: "#1976d2" },
+                },
+              }}
+              InputProps={{
+                ...params.InputProps,
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: "#757575" }} />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <>
+                    {loading ? <ClipLoader color="#757575" size={20} /> : null}
+                    {params.InputProps.endAdornment}
+                  </>
+                ),
+              }}
+            />
+          )}
+          sx={{ width: "100%" }}
         />
       </Box>
 
-      {/* Vehicle Search and Add */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h6" gutterBottom>
-          Add Vehicles
-        </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <TextField
-            label="Search Chassis No"
-            value={vehicleSearch}
-            onChange={handleVehicleSearchChange}
-            variant="outlined"
-            fullWidth
-            sx={{
-              maxWidth: "400px",
-              "& .MuiOutlinedInput-root": {
-                borderRadius: "25px",
-                backgroundColor: "#f5f5f5",
-                "&:hover fieldset": {
-                  borderColor: "#1976d2",
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: "#1976d2",
-                },
-              },
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ color: "#757575" }} />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <Button
-            variant="contained"
-            onClick={searchVehicle}
-            disabled={loading}
-            sx={{
-              borderRadius: "25px",
-              padding: "10px 20px",
-              background: "linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)",
-              boxShadow: "0 3px 5px 2px rgba(25, 118, 210, .3)",
-              "&:hover": {
-                background: "linear-gradient(45deg, #1565c0 30%, #2196f3 90%)",
-              },
-              textTransform: "none",
-            }}
-          >
-            {loading ? <ClipLoader color="#fff" size={20} /> : "Add Vehicle"}
-          </Button>
-        </Box>
-      </Box>
-
       {/* Error Display */}
-      {error && (
-        <Typography variant="body1" color="error" sx={{ mb: 2 }}>
-          {error}
-        </Typography>
-      )}
+      {error && <Typography variant="body1" color="error" sx={{ mb: 2 }}>{error}</Typography>}
 
       {/* Vehicle List */}
       {vehicles.length > 0 ? (
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" gutterBottom>
-            Vehicles (Total: {vehicles.length})
-          </Typography>
+          <Typography variant="h6" gutterBottom>Vehicles (Total: {vehicles.length})</Typography>
           <TableContainer component={Paper}>
             <Table>
               <TableHead sx={{ bgcolor: "whitesmoke" }}>
@@ -469,7 +422,7 @@ const DeliveredVehicle = () => {
                     <TableCell>
                       <TextField
                         type="number"
-                        value={vehicle.vRepair_charges === "" ? 0 : vehicle.vRepair_charges}
+                        value={vehicle.vRepair_charges}
                         onChange={(e) => handleRepairChargeChange(vehicle.vehicleNo, e.target.value)}
                         variant="outlined"
                         size="small"
@@ -480,13 +433,13 @@ const DeliveredVehicle = () => {
                     <TableCell>
                       <TextField
                         type="number"
-                        value={vehicle.vamount === "" ? 0 : vehicle.vamount}
+                        value={vehicle.vamount}
                         onChange={(e) => handleVamountChange(vehicle.vehicleNo, e.target.value)}
                         variant="outlined"
                         size="small"
                         InputProps={{ inputProps: { min: 0, step: "0.01" } }}
                         sx={{ width: "120px" }}
-                        disabled // Disabled to reflect calculated vamount from amountPerVehicle
+                        disabled
                       />
                     </TableCell>
                     <TableCell>
@@ -497,7 +450,7 @@ const DeliveredVehicle = () => {
                         size="small"
                         InputProps={{ inputProps: { min: 0, step: "0.01" } }}
                         sx={{ width: "120px" }}
-                        disabled // Total Charges is calculated
+                        disabled
                       />
                     </TableCell>
                     <TableCell>

@@ -12,15 +12,18 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  InputAdornment,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { ClipLoader } from "react-spinners";
 import SaveIcon from "@mui/icons-material/Save";
-import SearchIcon from "@mui/icons-material/Search";
+import AddIcon from "@mui/icons-material/Add";
 
 const CollectVehicle = () => {
-  const [vehicleSearch, setVehicleSearch] = useState("");
-  const [vehicles, setVehicles] = useState([]);
+  const [allVehicles, setAllVehicles] = useState([]); // Store all available vehicles for dropdown
+  const [vehicles, setVehicles] = useState([]); // Store selected vehicles in the grid
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -41,45 +44,29 @@ const CollectVehicle = () => {
     admin_id: 1,
   });
 
-  // Search for a vehicle by vehicleId or chassisNo
-  const searchVehicle = async () => {
-    if (!vehicleSearch.trim()) {
-      setError("Please enter a Vehicle ID or Chassis Number.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/admin/collect/search?query=${encodeURIComponent(vehicleSearch)}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch vehicle: ${response.statusText}`);
-      }
-      const result = await response.json();
-      if (result.status && result.data) {
-        const vehicle = result.data;
-        if (vehicles.some((v) => v.vehicleId === vehicle.vehicleId)) {
-          setError("This vehicle is already added.");
-        } else {
-          setVehicles((prev) => [...prev, vehicle]);
-          setVehicleSearch("");
+  // Fetch all vehicles on mount
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch("/api/admin/vehicles"); // Adjust API endpoint as needed
+        if (!response.ok) {
+          throw new Error(`Failed to fetch vehicles: ${response.statusText}`);
         }
-      } else {
-        throw new Error(result.error || "No vehicle found.");
+        const result = await response.json();
+        const fetchedVehicles = result.data || [];
+        console.log("Fetched vehicles:", fetchedVehicles.map((v) => ({ id: v.id, chassisNo: v.chassisNo })));
+        setAllVehicles(fetchedVehicles);
+      } catch (err) {
+        console.error("Fetch vehicles error:", err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error("Search error:", err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle input changes for vehicle search
-  const handleVehicleSearchChange = (e) => {
-    setVehicleSearch(e.target.value);
-  };
+    };
+    fetchVehicles();
+  }, []);
 
   // Handle input changes for charges
   const handleInputChange = (e) => {
@@ -120,7 +107,30 @@ const CollectVehicle = () => {
 
   // Remove a vehicle from the list
   const removeVehicle = (vehicleId) => {
-    setVehicles((prev) => prev.filter((v) => v.vehicleId !== vehicleId));
+    setVehicles((prev) => prev.filter((v) => v.id !== vehicleId));
+  };
+
+  // Add a vehicle to the grid
+  const addVehicle = (vehicleId) => {
+    console.log("Attempting to add vehicle with ID:", vehicleId);
+    const selectedVehicle = allVehicles.find((v) => v.id === vehicleId); // Changed from vehicleId to id
+    if (!selectedVehicle) {
+      setError("Selected vehicle not found.");
+      console.error("Vehicle not found for ID:", vehicleId);
+      return;
+    }
+    console.log("Selected vehicle:", selectedVehicle);
+    if (vehicles.some((v) => v.id === selectedVehicle.id)) {
+      setError("This vehicle is already added.");
+      console.warn("Duplicate vehicle detected:", selectedVehicle.id);
+      return;
+    }
+    setVehicles((prev) => {
+      const newVehicles = [...prev, selectedVehicle];
+      console.log("Updated vehicles list:", newVehicles);
+      return newVehicles;
+    });
+    setError("");
   };
 
   // Convert file to Base64 (full data URL)
@@ -195,10 +205,10 @@ const CollectVehicle = () => {
       setError("Please add at least one vehicle.");
       return;
     }
-  
+
     setSaving(true);
     setError("");
-  
+
     try {
       let imagePath = portCollect.imagePath;
       if (portCollect.imageFile) {
@@ -209,9 +219,9 @@ const CollectVehicle = () => {
         }
         setPortCollect((prev) => ({ ...prev, imagePath }));
       }
-  
+
       const portCollectData = vehicles.map((vehicle) => ({
-        vehicleNo: vehicle.vehicleId.toString(),
+        vehicleNo: vehicle.id.toString(), // Changed from vehicleId to id
         date: new Date(portCollect.date),
         freight_amount: charges.freight || 0,
         port_charges: charges.port_charges || 0,
@@ -223,23 +233,23 @@ const CollectVehicle = () => {
         imagePath: imagePath || "",
         admin_id: portCollect.admin_id,
       }));
-  
+
       console.log("Saving portCollectData:", JSON.stringify(portCollectData, null, 2));
-  
+
       const response = await fetch("/api/admin/collect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(portCollectData),
       });
-  
-      const responseBody = await response.text(); // Get raw response body
+
+      const responseBody = await response.text();
       console.log("Server response status:", response.status);
       console.log("Server response body:", responseBody);
-  
+
       if (!response.ok) {
         throw new Error(`Failed to save data: ${response.statusText} - ${responseBody}`);
       }
-  
+
       const result = JSON.parse(responseBody);
       if (result.status) {
         alert(`Saved ${vehicles.length} vehicle records successfully!`);
@@ -269,8 +279,6 @@ const CollectVehicle = () => {
     }
   };
 
-
-  
   return (
     <Paper sx={{ maxWidth: "1200px", mx: "auto", p: 3, mt: 4 }}>
       <Typography variant="h5" component="h1" gutterBottom>
@@ -374,56 +382,59 @@ const CollectVehicle = () => {
         />
       </Box>
 
-      {/* Vehicle Search and Add */}
+      {/* Vehicle Selection and Add */}
       <Box sx={{ mb: 4 }}>
         <Typography variant="h6" gutterBottom>
           Add Vehicles
         </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <TextField
-            label="Search Vehicle ID or Chassis No"
-            value={vehicleSearch}
-            onChange={handleVehicleSearchChange}
-            variant="outlined"
-            fullWidth
-            sx={{
-              maxWidth: "400px",
-              "& .MuiOutlinedInput-root": {
-                borderRadius: "25px",
-                backgroundColor: "#f5f5f5",
-                "&:hover fieldset": {
-                  borderColor: "#1976d2",
-                },
-                "&.Mui-focused fieldset": {
-                  borderColor: "#1976d2",
-                },
-              },
-            }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon sx={{ color: "#757575" }} />
-                </InputAdornment>
-              ),
-            }}
-          />
-          <Button
-            variant="contained"
-            onClick={searchVehicle}
-            disabled={loading}
-            sx={{
-              borderRadius: "25px",
-              padding: "10px 20px",
-              background: "linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)",
-              boxShadow: "0 3px 5px 2px rgba(25, 118, 210, .3)",
-              "&:hover": {
-                background: "linear-gradient(45deg, #1565c0 30%, #2196f3 90%)",
-              },
-              textTransform: "none",
-            }}
-          >
-            {loading ? <ClipLoader color="#fff" size={20} /> : "Add Vehicle"}
-          </Button>
+        <Box sx={{ mb: 2 }}>
+          <FormControl variant="outlined" fullWidth>
+            <InputLabel>Select Vehicle</InputLabel>
+            <Select
+              label="Select Vehicle"
+              onChange={(e) => {
+                console.log("Select changed, value:", e.target.value);
+                addVehicle(e.target.value);
+              }}
+              value={""} // Controlled component, reset to empty after adding
+            >
+              <MenuItem value="" disabled>
+                <em>Select a vehicle</em>
+              </MenuItem>
+              {allVehicles.map((vehicle) => (
+                <MenuItem
+                  key={vehicle.id}
+                  value={vehicle.id}
+                  sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                >
+                  <Box sx={{ flexGrow: 1 }}>
+                    {`${vehicle.chassisNo} - ${vehicle.year} (${vehicle.color})`}
+                  </Box>
+                  {/* Optional: Keep the Add button for manual trigger */}
+                  {/* <Button
+                    variant="contained"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addVehicle(vehicle.id);
+                    }}
+                    startIcon={<AddIcon />}
+                    sx={{
+                      borderRadius: "25px",
+                      background: "linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)",
+                      boxShadow: "0 3px 5px 2px rgba(25, 118, 210, .3)",
+                      "&:hover": {
+                        background: "linear-gradient(45deg, #1565c0 30%, #2196f3 90%)",
+                      },
+                      textTransform: "none",
+                    }}
+                  >
+                    Add
+                  </Button> */}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Box>
       </Box>
 
@@ -458,8 +469,8 @@ const CollectVehicle = () => {
               </TableHead>
               <TableBody>
                 {vehicles.map((vehicle) => (
-                  <TableRow key={vehicle.vehicleId}>
-                    <TableCell>{vehicle.vehicleId}</TableCell>
+                  <TableRow key={vehicle.id}>
+                    <TableCell>{vehicle.id}</TableCell>
                     <TableCell>{vehicle.chassisNo}</TableCell>
                     <TableCell>{vehicle.year}</TableCell>
                     <TableCell>{vehicle.color}</TableCell>
@@ -470,7 +481,7 @@ const CollectVehicle = () => {
                         variant="outlined"
                         color="error"
                         size="small"
-                        onClick={() => removeVehicle(vehicle.vehicleId)}
+                        onClick={() => removeVehicle(vehicle.id)}
                       >
                         Remove
                       </Button>

@@ -19,7 +19,7 @@ import {
   Box,
   Typography,
 } from "@mui/material";
-import { Close as CloseIcon } from "@mui/icons-material";
+import { Close as CloseIcon, Download as DownloadIcon } from "@mui/icons-material";
 
 const InspectionList = () => {
   const [inspections, setInspections] = useState([]);
@@ -105,30 +105,32 @@ const InspectionList = () => {
 
   return (
     <Paper sx={{ maxWidth: "1200px", mx: "auto", p: 3 }}>
-      <Typography variant="h5" gutterBottom>
-        Inspection List
-      </Typography>
-
-      <Box mb={2} position="relative">
-        <TextField
-          label="Search by Vehicle Number or Company"
-          variant="outlined"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          fullWidth
-          InputProps={{
-            endAdornment: searchQuery && (
-              <IconButton onClick={() => setSearchQuery("")} edge="end">
-                <CloseIcon />
-              </IconButton>
-            ),
-          }}
-        />
+      {/* Align "Inspection List" and search field in a single row */}
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+        <Typography variant="h5">
+          Inspection List
+        </Typography>
+        <Box width="40%">
+          <TextField
+            label="Search by Vehicle Number or Company"
+            variant="outlined"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            fullWidth
+            InputProps={{
+              endAdornment: searchQuery && (
+                <IconButton onClick={() => setSearchQuery("")} edge="end">
+                  <CloseIcon />
+                </IconButton>
+              ),
+            }}
+          />
+        </Box>
       </Box>
 
       <TableContainer component={Paper}>
         <Table>
-          <TableHead>
+          <TableHead sx={{ backgroundColor: "#f5f5f5" }}>
             <TableRow>
               <TableCell>#</TableCell>
               <TableCell>Date</TableCell>
@@ -146,7 +148,7 @@ const InspectionList = () => {
                   <TableCell>{new Date(inspection.date).toLocaleDateString()}</TableCell>
                   <TableCell>{inspection.company}</TableCell>
                   <TableCell>{inspection.vehicleNo}</TableCell>
-                  <TableCell>${(inspection.amount || 0).toFixed(2)}</TableCell> {/* Fallback to 0 */}
+                  <TableCell>${(inspection.amount || 0).toFixed(2)}</TableCell>
                   <TableCell>
                     <Button
                       variant="contained"
@@ -205,7 +207,7 @@ const InspectionList = () => {
         fullWidth
         PaperProps={{ sx: { maxHeight: "85vh" } }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ backgroundColor: "#f5f5f5" }}>
           Inspection Details
           <IconButton
             aria-label="close"
@@ -232,21 +234,32 @@ const InspectionList = () => {
                   <Typography variant="caption" color="textSecondary">Company</Typography>
                   <Typography variant="body1">{selectedInspection.company}</Typography>
                 </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Vehicle No</Typography>
-                  <Typography variant="body1">{selectedInspection.vehicleNo}</Typography>
-                </Paper>
+                
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Amount</Typography>
-                  <Typography variant="body1">${(selectedInspection.amount || 0).toFixed(2)}</Typography> {/* Fallback to 0 */}
+                  <Typography variant="body1">{(selectedInspection.invoice_amount || 0).toFixed(2)}</Typography>
                 </Paper>
+
+
                 <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Image Path</Typography>
-                  <Typography variant="body1">{selectedInspection.imagePath || "N/A"}</Typography>
+                  <Typography variant="caption" color="textSecondary">Tax </Typography>
+                  <Typography variant="body1">{(selectedInspection.invoice_tax || 0).toFixed(2)}</Typography>
                 </Paper>
+
+
+                <Paper elevation={1} sx={{ p: 2 }}>
+                  <Typography variant="caption" color="textSecondary">Toal Amount (Yen) </Typography>
+                  <Typography variant="body1">{(selectedInspection.invoice_total || 0).toFixed(2)}</Typography>
+                </Paper>
+
+                <Paper elevation={1} sx={{ p: 2 }}>
+                  <Typography variant="caption" color="textSecondary">Toal Amount ($) </Typography>
+                  <Typography variant="body1">{(selectedInspection.invoice_amount_dollers	 || 0).toFixed(2)}</Typography>
+                </Paper>
+                
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Added By</Typography>
-                  <Typography variant="body1">{selectedInspection.added_by || 'N/A'}</Typography>
+                  <Typography variant="body1">{selectedInspection.admin_id  || "N/A"}</Typography>
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Created At</Typography>
@@ -256,68 +269,72 @@ const InspectionList = () => {
                   <Typography variant="caption" color="textSecondary">Updated At</Typography>
                   <Typography variant="body1">{new Date(selectedInspection.updatedAt).toLocaleString()}</Typography>
                 </Paper>
+
+
+                <Paper elevation={1} sx={{ p: 2 }}>
+                  <Typography variant="caption" color="textSecondary">Image</Typography>
+                  {selectedInspection.imagePath ? (
+                    <Box display="flex" flexDirection="column" gap={1}>
+                      <a href={selectedInspection.imagePath} target="_blank" rel="noopener noreferrer">
+                        <img
+                          src={selectedInspection.imagePath}
+                          alt="Inspection Receipt"
+                          style={{ width: "100%", maxHeight: 128, objectFit: "cover", borderRadius: 8 }}
+                        />
+                      </a>
+                      <Button
+                        variant="outlined"
+                        color="primary"
+                        size="small"
+                        startIcon={<DownloadIcon />}
+                        href={selectedInspection.imagePath}
+                        download
+                        sx={{ alignSelf: "center", mt: 1 }}
+                      >
+                        Download Image
+                      </Button>
+                    </Box>
+                  ) : (
+                    <Typography variant="body1">N/A</Typography>
+                  )}
+                </Paper>
               </Box>
 
-              {/* Related Vehicle Details */}
+             
+
+              {/* Related Vehicle Details in a Table */}
               {selectedInspection.vehicle && (
                 <Box mt={4}>
                   <Typography variant="h6" gutterBottom>Vehicle Details</Typography>
-                  <Paper elevation={1} sx={{ p: 2 }}>
-                    <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Vehicle ID</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.id || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Invoice No</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.invoiceNo || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Chassis No</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.chassisNo || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Maker</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.maker || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Year</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.year || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Color</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.color || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Engine Type</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.engineType || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Total Amount</Typography>
-                        <Typography variant="body1">{Number(selectedInspection.vehicle.totalAmount || 0).toFixed(2)}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Sending Port</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.sendingPort || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Status</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.status || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Added By</Typography>
-                        <Typography variant="body1">{selectedInspection.vehicle.added_by || 'N/A'}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Created At</Typography>
-                        <Typography variant="body1">{new Date(selectedInspection.vehicle.createdAt).toLocaleString()}</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                        <Typography variant="body1">{new Date(selectedInspection.vehicle.updatedAt).toLocaleString()}</Typography>
-                      </Box>
-                    </Box>
-                  </Paper>
+                  <TableContainer component={Paper}>
+                    <Table>
+                      <TableHead sx={{ backgroundColor: "#f5f5f5" }}>
+                        <TableRow>
+                          <TableCell>Vehicle ID</TableCell>
+        
+                          <TableCell>Chassis No</TableCell>
+                          <TableCell>Maker</TableCell>
+                          <TableCell>Year</TableCell>
+                          <TableCell>Color</TableCell>
+                          <TableCell>Engine Type</TableCell>
+                          <TableCell>Total Amount</TableCell>
+    
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell>{selectedInspection.vehicle.id || "N/A"}</TableCell>                   
+                          <TableCell>{selectedInspection.vehicle.chassisNo || "N/A"}</TableCell>
+                          <TableCell>{selectedInspection.vehicle.maker || "N/A"}</TableCell>
+                          <TableCell>{selectedInspection.vehicle.year || "N/A"}</TableCell>
+                          <TableCell>{selectedInspection.vehicle.color || "N/A"}</TableCell>
+                          <TableCell>{selectedInspection.vehicle.engineType || "N/A"}</TableCell>
+                          <TableCell>$ {Number(selectedInspection.vamount_doller || 0).toFixed(2)}</TableCell>
+                        
+                            </TableRow>
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Box>
               )}
             </Box>

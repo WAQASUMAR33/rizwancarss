@@ -21,8 +21,8 @@ import {
   CardHeader,
   Box,
   useTheme,
-  TablePagination, // Import TablePagination
-  TextField, // Import TextField for filtering
+  TablePagination,
+  TextField,
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -108,9 +108,9 @@ const ShowroomVehicleRecords = () => {
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [page, setPage] = useState(0); // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(5); // Rows per page
-  const [filter, setFilter] = useState(""); // Filter state
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
+  const [filter, setFilter] = useState("");
   const router = useRouter();
   const theme = useTheme();
 
@@ -181,7 +181,7 @@ const ShowroomVehicleRecords = () => {
   // Filter records based on input
   const filteredRecords = showroomRecords.filter((record) =>
     Object.values(record).some((value) =>
-      value.toString().toLowerCase().includes(filter.toLowerCase())
+      value?.toString().toLowerCase().includes(filter.toLowerCase())
     )
   );
 
@@ -197,49 +197,58 @@ const ShowroomVehicleRecords = () => {
 
   return (
     <Container maxWidth="lg" sx={{ py: theme.spacing(4), px: theme.spacing(2) }}>
-      <Typography
-        variant="h4"
-        component="h1"
-        gutterBottom
-        sx={{
-          fontWeight: theme.typography.fontWeightBold,
-          color: theme.palette.text.primary,
-          mb: theme.spacing(4),
-        }}
-      >
-        Showroom Vehicle Records
-      </Typography>
-
-      {loading && (
-        <Stack
-          direction="row"
-          justifyContent="center"
-          sx={{ my: theme.spacing(4) }}
-        >
-          <CircularProgress />
-        </Stack>
-      )}
-      {error && (
-        <Typography
-          variant="body2"
-          color="error"
-          sx={{ mb: theme.spacing(3), px: theme.spacing(1) }}
-        >
-          {error}
-        </Typography>
-      )}
-
       {!selectedRecord ? (
         // List View
         <Stack spacing={theme.spacing(2)}>
-          {/* Filter Input */}
-          <TextField
-            label="Filter Records"
-            variant="outlined"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            sx={{ mb: theme.spacing(2), width: "100%", maxWidth: 400 }}
-          />
+          {/* Title and Filter in a Single Row */}
+          <Stack
+            direction={{ xs: "column", sm: "row" }} // Stack vertically on small screens, horizontally on larger screens
+            spacing={theme.spacing(2)}
+            alignItems={{ xs: "stretch", sm: "center" }} // Align items to stretch on small screens, center on larger screens
+            justifyContent="space-between"
+            sx={{ mb: theme.spacing(2) }}
+          >
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: theme.typography.fontWeightBold,
+                color: theme.palette.text.primary,
+              }}
+            >
+              Showroom Vehicle Records
+            </Typography>
+            <TextField
+              label="Filter Records"
+              variant="outlined"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              sx={{
+                width: { xs: "100%", sm: "auto" }, // Full width on small screens, auto on larger screens
+                maxWidth: { sm: 400 }, // Limit width on larger screens
+                flexShrink: 0,
+              }}
+            />
+          </Stack>
+
+          {loading && (
+            <Stack
+              direction="row"
+              justifyContent="center"
+              sx={{ my: theme.spacing(4) }}
+            >
+              <CircularProgress />
+            </Stack>
+          )}
+          {error && (
+            <Typography
+              variant="body2"
+              color="error"
+              sx={{ mb: theme.spacing(3), px: theme.spacing(1) }}
+            >
+              {error}
+            </Typography>
+          )}
 
           <StyledTableContainer component={Paper}>
             <Table>

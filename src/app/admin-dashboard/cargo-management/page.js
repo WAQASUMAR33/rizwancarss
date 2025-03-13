@@ -180,25 +180,26 @@ const CargoList = () => {
 
   return (
     <Paper sx={{ maxWidth: "1200px", mx: "auto", p: 3 }}>
-      <Typography variant="h5" component="h2" gutterBottom>
-        Cargo Bookings List
-      </Typography>
-
-      <Box mb={2} position="relative">
-        <TextField
-          label="Search by Booking Number or Shipper Name"
-          variant="outlined"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          fullWidth
-          InputProps={searchQuery && {
-            endAdornment: (
-              <IconButton onClick={() => setSearchQuery("")} edge="end">
-                <CloseIcon />
-              </IconButton>
-            ),
-          }}
-        />
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2, flexWrap: "wrap" }}>
+        <Typography variant="h5" component="h2" gutterBottom>
+          Cargo Bookings List
+        </Typography>
+        <Box sx={{ width: { xs: "100%", sm: "50%" }, mt: { xs: 2, sm: 0 } }}>
+          <TextField
+            label="Search by Booking Number or Shipper Name"
+            variant="outlined"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            fullWidth
+            InputProps={searchQuery && {
+              endAdornment: (
+                <IconButton onClick={() => setSearchQuery("")} edge="end">
+                  <CloseIcon />
+                </IconButton>
+              ),
+            }}
+          />
+        </Box>
       </Box>
 
       <TableContainer component={Paper}>
@@ -209,8 +210,10 @@ const CargoList = () => {
               <TableCell>Booking No</TableCell>
               <TableCell>Shipper Name</TableCell>
               <TableCell>Consignee</TableCell>
-              <TableCell>ETD</TableCell>
-              <TableCell>ETA</TableCell>
+              <TableCell>Loading Port</TableCell>
+              <TableCell>Discharge Port</TableCell>
+              <TableCell>Freight Term</TableCell>
+              <TableCell>Total Amount</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -218,12 +221,14 @@ const CargoList = () => {
             {paginatedCargoBookings.length > 0 ? (
               paginatedCargoBookings.map((cargo, index) => (
                 <TableRow key={cargo.id} hover>
-                  <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+                  <TableCell>{cargo.id}</TableCell>
                   <TableCell>{cargo.bookingNo}</TableCell>
                   <TableCell>{cargo.shipperName}</TableCell>
                   <TableCell>{cargo.consignee}</TableCell>
-                  <TableCell>{new Date(cargo.etd).toLocaleDateString()}</TableCell>
-                  <TableCell>{new Date(cargo.eta).toLocaleDateString()}</TableCell>
+                  <TableCell>{cargo.portOfLoading}</TableCell>
+                  <TableCell>{cargo.portOfDischarge}</TableCell>
+                  <TableCell>{cargo.freightTerm}</TableCell>
+                  <TableCell>{cargo.net_total_amount_dollars}</TableCell>
                   <TableCell>
                     <Button
                       variant="contained"
@@ -496,9 +501,7 @@ const CargoList = () => {
                                   <TableCell>Color</TableCell>
                                   <TableCell>CC</TableCell>
                                   <TableCell>Amount</TableCell>
-                                  <TableCell>Image Path</TableCell>
-                                  <TableCell>Created At</TableCell>
-                                  <TableCell>Updated At</TableCell>
+                                
                                 </TableRow>
                               </TableHead>
                               <TableBody>
@@ -510,32 +513,8 @@ const CargoList = () => {
                                     <TableCell>{item.year}</TableCell>
                                     <TableCell>{item.color}</TableCell>
                                     <TableCell>{item.cc}</TableCell>
-                                    <TableCell>{item.amount}</TableCell>
-                                    <TableCell>
-                                      {item.imagePath ? (
-                                        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                                          <img
-                                            src={item.imagePath}
-                                            alt={`Item ${item.itemNo}`}
-                                            style={{ maxWidth: "100px", maxHeight: "100px", objectFit: "contain" }}
-                                            onError={(e) => handleImageError(e, "Container Item")}
-                                          />
-                                          <IconButton size="small" href={item.imagePath} target="_blank" rel="noopener noreferrer">
-                                            <OpenInNewIcon fontSize="small" />
-                                          </IconButton>
-                                          <IconButton
-                                            size="small"
-                                            onClick={() => handleDownloadImage(item.imagePath, `item-${item.id}.jpg`)}
-                                          >
-                                            <DownloadIcon fontSize="small" />
-                                          </IconButton>
-                                        </Box>
-                                      ) : (
-                                        "N/A"
-                                      )}
-                                    </TableCell>
-                                    <TableCell>{new Date(item.createdAt).toLocaleString()}</TableCell>
-                                    <TableCell>{new Date(item.updatedAt).toLocaleString()}</TableCell>
+                                    <TableCell>$ {item.amount}</TableCell>
+                                   
                                   </TableRow>
                                 ))}
                               </TableBody>

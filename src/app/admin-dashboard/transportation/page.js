@@ -70,11 +70,28 @@ const TransportList = () => {
     setCurrentPage(1);
   }, [searchQuery, transports]);
 
-  const totalPages = Math.ceil(filteredTransports.length / itemsPerPage);
-  const paginatedTransports = filteredTransports.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+  // Calculate total number of rows (one row per vehicle)
+  const totalRows = filteredTransports.reduce(
+    (acc, transport) => acc + (transport.vehicles?.length || 0),
+    0
   );
+  const totalPages = Math.ceil(totalRows / itemsPerPage);
+
+  // Paginate the rows (one row per vehicle)
+  const paginatedRows = [];
+  let currentRowIndex = 0;
+
+  filteredTransports.forEach((transport) => {
+    transport.vehicles?.forEach((vehicle) => {
+      if (
+        currentRowIndex >= (currentPage - 1) * itemsPerPage &&
+        currentRowIndex < currentPage * itemsPerPage
+      ) {
+        paginatedRows.push({ transport, vehicle });
+      }
+      currentRowIndex++;
+    });
+  });
 
   const handleDownloadImage = (imageUrl, fileName) => {
     fetch(imageUrl)
@@ -104,6 +121,7 @@ const TransportList = () => {
       </Box>
     );
   }
+
   if (error) {
     return (
       <Typography variant="body1" color="error" align="center">
@@ -137,29 +155,36 @@ const TransportList = () => {
 
       <TableContainer component={Paper}>
         <Table>
-          <TableHead sx={{ backgroundColor: "#F5F5F5" }}> {/* White smoke color */}
+          <TableHead sx={{ backgroundColor: "#F5F5F5" }}>
             <TableRow>
-              <TableCell>#</TableCell>
-              <TableCell>Date</TableCell>
-              <TableCell>Delivery Date</TableCell>
-              <TableCell>Port</TableCell>
-              <TableCell>Company</TableCell>
-              <TableCell>Total Amount (Yen)</TableCell>
-              <TableCell>Vehicle No</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>#</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Date</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>D Date</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Port</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Company</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Total(Yen)</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Total(USD)</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Chassis#</TableCell>
+              <TableCell sx={{ fontWeight: "bold" }}>Vehicle Amount(USD)</TableCell>
+              
+              <TableCell sx={{ fontWeight: "bold" }}>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {paginatedTransports.length > 0 ? (
-              paginatedTransports.map((transport, index) => (
-                <TableRow key={transport.id} hover>
-                  <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+            {paginatedRows.length > 0 ? (
+              paginatedRows.map(({ transport, vehicle }, index) => (
+                <TableRow key={`${transport.id}-${vehicle.id}`} hover>
+                  <TableCell>{transport.invoiceno}</TableCell>
                   <TableCell>{new Date(transport.date).toLocaleDateString()}</TableCell>
                   <TableCell>{new Date(transport.deliveryDate).toLocaleDateString()}</TableCell>
                   <TableCell>{transport.port}</TableCell>
                   <TableCell>{transport.company}</TableCell>
                   <TableCell>{transport.totalamount.toFixed(2)}</TableCell>
-                  <TableCell>{transport.vehicleNo}</TableCell>
+                  <TableCell>{transport.totaldollers.toFixed(2)}</TableCell>
+                  
+                  <TableCell>{vehicle.chassisNo}</TableCell>
+                 
+                  <TableCell>{transport.v_amount.toFixed(2)}</TableCell>
                   <TableCell>
                     <Button
                       variant="contained"
@@ -174,7 +199,7 @@ const TransportList = () => {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8} align="center">
+                <TableCell colSpan={14} align="center">
                   No transports found.
                 </TableCell>
               </TableRow>
@@ -218,7 +243,7 @@ const TransportList = () => {
         fullWidth
         PaperProps={{ sx: { maxHeight: "85vh" } }}
       >
-        <DialogTitle sx={{ backgroundColor: "#F5F5F5" }}> {/* White smoke color */}
+        <DialogTitle sx={{ backgroundColor: "#F5F5F5" }}>
           Transport Details
           <IconButton
             aria-label="close"
@@ -242,7 +267,7 @@ const TransportList = () => {
                   <Typography variant="body1">{new Date(selectedTransport.date).toLocaleString()}</Typography>
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Delivery Date</Typography>
+                  <Typography variant="caption" color="textSecondary">D Date</Typography>
                   <Typography variant="body1">{new Date(selectedTransport.deliveryDate).toLocaleString()}</Typography>
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
@@ -269,11 +294,26 @@ const TransportList = () => {
                   <Typography variant="caption" color="textSecondary">Total Dollars (USD)</Typography>
                   <Typography variant="body1">{selectedTransport.totaldollers.toFixed(2)}</Typography>
                 </Paper>
+               
+                
+              
                 <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Vehicle No</Typography>
-                  <Typography variant="body1">{selectedTransport.vehicleNo}</Typography>
+                  <Typography variant="caption" color="textSecondary">Added By</Typography>
+                  <Typography variant="body1">
+                    {selectedTransport.Admin ? `${selectedTransport.Admin.fullname} (${selectedTransport.Admin.username})` : "N/A"}
+                  </Typography>
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
+                  <Typography variant="caption" color="textSecondary">Created At</Typography>
+                  <Typography variant="body1">{new Date(selectedTransport.createdAt).toLocaleString()}</Typography>
+                </Paper>
+                <Paper elevation={1} sx={{ p: 2 }}>
+                  <Typography variant="caption" color="textSecondary">Updated At</Typography>
+                  <Typography variant="body1">{new Date(selectedTransport.updatedAt).toLocaleString()}</Typography>
+                </Paper>
+              </Box>
+
+              <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Image</Typography>
                   {selectedTransport.imagePath ? (
                     <Box>
@@ -297,57 +337,37 @@ const TransportList = () => {
                     <Typography variant="body1">N/A</Typography>
                   )}
                 </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Added By</Typography>
-                  <Typography variant="body1">
-                    {selectedTransport.Admin ? `${selectedTransport.Admin.fullname} (${selectedTransport.Admin.username})` : "N/A"}
-                  </Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Created At</Typography>
-                  <Typography variant="body1">{new Date(selectedTransport.createdAt).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                  <Typography variant="body1">{new Date(selectedTransport.updatedAt).toLocaleString()}</Typography>
-                </Paper>
-              </Box>
 
-              {/* Related Vehicle Details */}
+              {/* Related Vehicle Details in Table */}
               {selectedTransport.vehicles && selectedTransport.vehicles.length > 0 && (
                 <Box mt={4}>
                   <Typography variant="h6" gutterBottom>Vehicle Details</Typography>
-                  {selectedTransport.vehicles.map((vehicle, idx) => (
-                    <Paper key={vehicle.id} elevation={1} sx={{ p: 2, mb: 2 }}>
-                      <Typography variant="subtitle1" gutterBottom>Vehicle #{idx + 1}</Typography>
-                      <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Vehicle ID</Typography>
-                          <Typography variant="body1">{vehicle.id}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Chassis No</Typography>
-                          <Typography variant="body1">{vehicle.chassisNo}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Maker</Typography>
-                          <Typography variant="body1">{vehicle.maker}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Year</Typography>
-                          <Typography variant="body1">{vehicle.year}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Status</Typography>
-                          <Typography variant="body1">{vehicle.status}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Admin ID</Typography>
-                          <Typography variant="body1">{vehicle.admin_id}</Typography>
-                        </Box>
-                      </Box>
-                    </Paper>
-                  ))}
+                  <TableContainer component={Paper}>
+                    <Table>
+                      <TableHead sx={{ backgroundColor: "#F5F5F5" }}>
+                        <TableRow>
+                          <TableCell sx={{ border: "1px solid #ddd", fontWeight: "bold" }}>Vehicle ID</TableCell>
+                          <TableCell sx={{ border: "1px solid #ddd", fontWeight: "bold" }}>Chassis No</TableCell>
+                          <TableCell sx={{ border: "1px solid #ddd", fontWeight: "bold" }}>Maker</TableCell>
+                          <TableCell sx={{ border: "1px solid #ddd", fontWeight: "bold" }}>Year</TableCell>
+                          <TableCell sx={{ border: "1px solid #ddd", fontWeight: "bold" }}>Status</TableCell>
+                          <TableCell sx={{ border: "1px solid #ddd", fontWeight: "bold" }}>Amount</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {selectedTransport.vehicles.map((vehicle) => (
+                          <TableRow key={vehicle.id}>
+                            <TableCell sx={{ border: "1px solid #ddd" }}>{vehicle.id}</TableCell>
+                            <TableCell sx={{ border: "1px solid #ddd" }}>{vehicle.chassisNo}</TableCell>
+                            <TableCell sx={{ border: "1px solid #ddd" }}>{vehicle.maker}</TableCell>
+                            <TableCell sx={{ border: "1px solid #ddd" }}>{vehicle.year}</TableCell>
+                            <TableCell sx={{ border: "1px solid #ddd" }}>{vehicle.status}</TableCell>
+                            <TableCell sx={{ border: "1px solid #ddd" }}>{selectedTransport.v_amount.toFixed(2)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
                 </Box>
               )}
             </Box>

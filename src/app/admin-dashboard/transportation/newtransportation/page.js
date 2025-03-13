@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ClipLoader } from "react-spinners";
 import {
   TextField,
   Button,
@@ -11,9 +10,13 @@ import {
   Box,
   Typography,
   Paper,
+  Autocomplete,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
   IconButton,
 } from "@mui/material";
-import { Add as PlusIcon, Delete as TrashIcon, Close as CloseIcon } from "@mui/icons-material";
+import { Add as AddIcon, Delete as TrashIcon } from "@mui/icons-material";
 import { useSelector } from "react-redux";
 
 async function getExchangeRate() {
@@ -31,25 +34,26 @@ async function getExchangeRate() {
 }
 
 export default function TransportBookingForm() {
-  const [vehicles, setVehicles] = useState([]);
-  const [searchChassisNo, setSearchChassisNo] = useState("");
+  const [allVehicles, setAllVehicles] = useState([]); // Store all vehicles for dropdown
   const [seaPorts, setSeaPorts] = useState([]);
   const [exchangeRate, setExchangeRate] = useState(0);
 
   const [transportData, setTransportData] = useState({
-    date: "",           // Matches `date: DateTime`
-    deliveryDate: "",   // Matches `deliveryDate: DateTime`
-    port: "",           // Matches `port: String`
-    company: "",        // Matches `company: String`
-    receiptImage: null, // Used to generate `imagePath: String`
-    admin_id: null,     // Matches `admin_id: Int`
-    vehicles: [],       // Used to generate `vehicleNo: String` and `vehicles` array for API
+    date: "",
+    deliveryDate: "",
+    invoiceno: "",
+    port: "",
+    company: "",
+    transportAmount: 0,
+    receiptImage: null,
+    admin_id: null,
+    vehicles: [],
   });
-  const [totalAmountYen, setTotalAmountYen] = useState(0);   // Maps to `amount: Float`
-  const [tenPercentAdd, setTenPercentAdd] = useState(0);     // Maps to `tenPercentAdd: Float`
-  const [totalAmount, setTotalAmount] = useState(0);         // Maps to `totalamount: Float`
-  const [totalDollars, setTotalDollars] = useState(0);       // Maps to `totaldollers: Float`
-  const [loading, setLoading] = useState(false);
+  const [totalAmountYen, setTotalAmountYen] = useState(0);
+  const [tenPercentAdd, setTenPercentAdd] = useState(0);
+  const [totalAmount, setTotalAmount] = useState(0);
+  const [totalDollars, setTotalDollars] = useState(0);
+  const [perVehicleDollars, setPerVehicleDollars] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
@@ -62,104 +66,72 @@ export default function TransportBookingForm() {
   }, [adminId]);
 
   useEffect(() => {
-    const fetchSeaPortsAndRate = async () => {
+    const fetchSeaPortsAndRateAndVehicles = async () => {
       try {
-        const [portsResponse, rate] = await Promise.all([
+        const [portsResponse, rate, vehiclesResponse] = await Promise.all([
           fetch("/api/admin/sea_ports"),
           getExchangeRate(),
+          fetch("/api/admin/vehicles"),
         ]);
 
         if (!portsResponse.ok) throw new Error("Failed to fetch sea ports");
         const portsData = await portsResponse.json();
         setSeaPorts(portsData.data || portsData);
+
+        if (!vehiclesResponse.ok) throw new Error("Failed to fetch vehicles");
+        const vehiclesData = await vehiclesResponse.json();
+        // Filter vehicles to only include those with "Pending" status
+        const pendingVehicles = (vehiclesData.data || vehiclesData).filter(
+          (vehicle) => vehicle.status === "Pending"
+        );
+        setAllVehicles(pendingVehicles);
+
         setExchangeRate(rate);
       } catch (err) {
         setError("Error fetching data: " + err.message);
       }
     };
-    fetchSeaPortsAndRate();
+    fetchSeaPortsAndRateAndVehicles();
   }, []);
 
   useEffect(() => {
-    const totalYen = transportData.vehicles.reduce((sum, vehicle) => 
-      sum + (parseFloat(vehicle.amount) || 0), 0);
-    const tenPercent = totalYen * 0.1;
-    const totalWithTenPercent = totalYen + tenPercent;
+    const transportAmountYen = parseFloat(transportData.transportAmount) || 0;
+    const tenPercent = transportAmountYen * 0.1;
+    const totalWithTenPercent = transportAmountYen + tenPercent;
     const totalInDollars = totalWithTenPercent * exchangeRate;
 
-    setTotalAmountYen(totalYen);       // For `amount`
-    setTenPercentAdd(tenPercent);      // For `tenPercentAdd`
-    setTotalAmount(totalWithTenPercent); // For `totalamount`
-    setTotalDollars(totalInDollars);   // For `totaldollers`
-  }, [transportData.vehicles, exchangeRate]);
+    setTotalAmountYen(transportAmountYen);
+    setTenPercentAdd(tenPercent);
+    setTotalAmount(totalWithTenPercent);
+    setTotalDollars(totalInDollars);
 
-  const searchVehicle = async () => {
-    if (!searchChassisNo) {
-      setError("Please enter a chassis number");
+    const vehicleCount = transportData.vehicles.length;
+    const perVehicleDollarAmount = vehicleCount > 0 ? totalInDollars / vehicleCount : 0;
+    setPerVehicleDollars(perVehicleDollarAmount);
+  }, [transportData.transportAmount, transportData.vehicles.length, exchangeRate]);
+
+  const addToTransport = (vehicle) => {
+    if (!vehicle) return;
+
+    // Check if vehicle is already added
+    if (transportData.vehicles.some(v => v.id === vehicle.id)) {
+      setError("Vehicle already added to the list");
       return;
     }
 
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/admin/invoice-management/VehicleSearch/${searchChassisNo}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Vehicle not found");
-      }
-      const result = await response.json();
-      setVehicles([result.data]);
-      setError("");
-    } catch (err) {
-      setError(err.message);
-      setVehicles([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const addToTransport = (vehicle) => {
-    fetch(`/api/admin/invoice-management/VehicleSearch/${vehicle.chassisNo}`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to fetch vehicle status");
-        return response.json();
-      })
-      .then((result) => {
-        const fullVehicle = result.data;
-        if (fullVehicle.status === "Pending") {
-          setTransportData((prev) => ({
-            ...prev,
-            vehicles: [...prev.vehicles, {
-              id: fullVehicle.id,
-              chassisNo: fullVehicle.chassisNo,
-              amount: "",
-              tenPercentAdd: 0,
-              totalamount: 0,
-              totaldollers: 0,
-            }],
-          }));
-          setVehicles([]);
-          setSearchChassisNo("");
-        } else {
-          alert(`Cannot add vehicle. Current status: ${fullVehicle.status}`);
-        }
-      })
-      .catch((err) => {
-        setError("Error checking vehicle status: " + err.message);
-      });
-  };
-
-  const updateVehicleTransport = (index, field, value) => {
-    const updatedVehicles = [...transportData.vehicles];
-    updatedVehicles[index][field] = value;
-
-    if (field === "amount") {
-      const amountYen = parseFloat(value) || 0;
-      updatedVehicles[index].tenPercentAdd = amountYen * 0.1;
-      updatedVehicles[index].totalamount = amountYen + updatedVehicles[index].tenPercentAdd;
-      updatedVehicles[index].totaldollers = updatedVehicles[index].totalamount * exchangeRate;
-    }
-
-    setTransportData((prev) => ({ ...prev, vehicles: updatedVehicles }));
+    // Use the status directly from the vehicle data (already filtered to "Pending")
+    setTransportData((prev) => ({
+      ...prev,
+      vehicles: [
+        ...prev.vehicles,
+        {
+          id: vehicle.id,
+          chassisNo: vehicle.chassisNo,
+          totaldollers: perVehicleDollars,
+        },
+      ],
+    }));
+    setError(""); // Clear any previous error
   };
 
   const removeVehicle = (index) => {
@@ -168,6 +140,10 @@ export default function TransportBookingForm() {
   };
 
   const handleInputChange = (field, value) => {
+    // Ensure date fields are valid or default to current date
+    if ((field === "date" || field === "deliveryDate") && !value) {
+      value = new Date().toISOString().split("T")[0];
+    }
     setTransportData((prev) => ({ ...prev, [field]: value }));
     if (field === "receiptImage" && value) {
       const file = value[0];
@@ -212,25 +188,24 @@ export default function TransportBookingForm() {
       }
 
       const payload = {
-        date: transportData.date,              // Maps to `date: DateTime`
-        deliveryDate: transportData.deliveryDate, // Maps to `deliveryDate: DateTime`
-        port: transportData.port,              // Maps to `port: String`
-        company: transportData.company,        // Maps to `company: String`
-        amount: totalAmountYen,                // Maps to `amount: Float`
-        tenPercentAdd: tenPercentAdd,          // Maps to `tenPercentAdd: Float`
-        totalamount: totalAmount,              // Maps to `totalamount: Float`
-        totaldollers: totalDollars,            // Maps to `totaldollers: Float`
-        imagePath: imagePath || "",            // Maps to `imagePath: String`
-        vehicleNo: transportData.vehicles.map(v => v.chassisNo).join(", "), // Maps to `vehicleNo: String`
-        admin_id: transportData.admin_id,      // Maps to `admin_id: Int`
-        createdAt: new Date().toISOString(),   // Maps to `createdAt: DateTime`
-        updatedAt: new Date().toISOString(),   // Maps to `updatedAt: DateTime`
+        date: transportData.date,
+        deliveryDate: transportData.deliveryDate,
+        invoiceno: transportData.invoiceno || "",
+        port: transportData.port,
+        company: transportData.company,
+        amount: totalAmountYen,
+        tenPercentAdd: tenPercentAdd,
+        totalamount: totalAmount,
+        totaldollers: totalDollars,
+        imagePath: imagePath || "",
+        admin_id: transportData.admin_id,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         vehicles: transportData.vehicles.map(v => ({
           id: v.id,
           vehicleNo: v.chassisNo,
-          amount: parseFloat(v.amount) || 0,
-          totaldollers: parseFloat(v.totaldollers) || 0,
-        })), // Extra data for updating `AddVehicle` statuses
+          totaldollers: perVehicleDollars,
+        })),
       };
 
       console.log("Data to be submitted:", JSON.stringify(payload, null, 2));
@@ -241,7 +216,6 @@ export default function TransportBookingForm() {
         body: JSON.stringify(payload),
       });
 
-      // Log raw response for debugging
       const responseText = await response.text();
       console.log("Response status:", response.status);
       console.log("Response text:", responseText);
@@ -260,8 +234,10 @@ export default function TransportBookingForm() {
       setTransportData({
         date: "",
         deliveryDate: "",
+        invoiceno: "",
         port: "",
         company: "",
+        transportAmount: 0,
         receiptImage: null,
         admin_id: adminId,
         vehicles: [],
@@ -291,18 +267,27 @@ export default function TransportBookingForm() {
             type="date"
             label="Transport Date"
             variant="outlined"
-            value={transportData.date}
+            value={transportData.date || new Date().toISOString().split("T")[0]}
             onChange={(e) => handleInputChange("date", e.target.value)}
             InputLabelProps={{ shrink: true }}
             fullWidth
+            required
           />
           <TextField
             type="date"
             label="Delivery Date"
             variant="outlined"
-            value={transportData.deliveryDate}
+            value={transportData.deliveryDate || new Date().toISOString().split("T")[0]}
             onChange={(e) => handleInputChange("deliveryDate", e.target.value)}
             InputLabelProps={{ shrink: true }}
+            fullWidth
+            required
+          />
+          <TextField
+            label="Invoice Number"
+            variant="outlined"
+            value={transportData.invoiceno}
+            onChange={(e) => handleInputChange("invoiceno", e.target.value)}
             fullWidth
           />
           <FormControl variant="outlined" fullWidth>
@@ -329,6 +314,14 @@ export default function TransportBookingForm() {
             onChange={(e) => handleInputChange("company", e.target.value)}
             fullWidth
           />
+          <TextField
+            type="number"
+            label="Transport Amount (Yen)"
+            variant="outlined"
+            value={transportData.transportAmount}
+            onChange={(e) => handleInputChange("transportAmount", e.target.value)}
+            fullWidth
+          />
         </Box>
         <Box mt={2}>
           <TextField
@@ -349,53 +342,86 @@ export default function TransportBookingForm() {
             </Box>
           )}
         </Box>
-      </Paper>
-
-      {/* Search Vehicle */}
-      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Search Vehicle
-        </Typography>
-        <Box display="flex" gap={2} alignItems="center">
+        {/* Invoice Totals */}
+        <Box mt={2} display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
           <TextField
-            label="Enter Chassis Number"
+            label="Transport Amount (Yen)"
             variant="outlined"
-            value={searchChassisNo}
-            onChange={(e) => setSearchChassisNo(e.target.value)}
+            value={totalAmountYen.toFixed(2)}
+            InputProps={{ readOnly: true }}
             fullWidth
           />
-          <Button
-            variant="contained"
-            color="success"
-            onClick={searchVehicle}
-            disabled={loading}
-            startIcon={<PlusIcon />}
-          >
-            {loading ? "Searching..." : "Search"}
-          </Button>
+          <TextField
+            label="10% Add (Yen)"
+            variant="outlined"
+            value={tenPercentAdd.toFixed(2)}
+            InputProps={{ readOnly: true }}
+            fullWidth
+          />
+          <TextField
+            label="Grand Total (Yen)"
+            variant="outlined"
+            value={totalAmount.toFixed(2)}
+            InputProps={{ readOnly: true }}
+            fullWidth
+          />
+          <TextField
+            label="Grand Total (USD)"
+            variant="outlined"
+            value={totalDollars.toFixed(2)}
+            InputProps={{ readOnly: true }}
+            fullWidth
+          />
         </Box>
-        {error && (
-          <Typography variant="body2" color="error" sx={{ mt: 1 }}>
-            {error}
-          </Typography>
-        )}
-        {vehicles.map((vehicle, index) => (
-          <Paper key={index} elevation={1} sx={{ mt: 2, p: 2, display: "flex", justifyContent: "space-between" }}>
-            <Box>
-              <Typography variant="body1">Chassis No: {vehicle.chassisNo}</Typography>
-              <Typography variant="body1">Maker: {vehicle.maker}</Typography>
-              <Typography variant="body1">Year: {vehicle.year}</Typography>
-            </Box>
-            <Button
-              variant="contained"
-              color="success"
-              onClick={() => addToTransport(vehicle)}
-              startIcon={<PlusIcon />}
-            >
-              Add to Transport
-            </Button>
-          </Paper>
-        ))}
+      </Paper>
+
+      {/* Select Vehicle */}
+      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Select Vehicle
+        </Typography>
+        <Box display="flex" flexDirection="column" gap={2}>
+          <Autocomplete
+            options={allVehicles}
+            getOptionLabel={(vehicle) => `${vehicle.chassisNo} - ${vehicle.maker} (${vehicle.year})`}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Search Vehicles (Chassis No, Maker, Year)"
+                variant="outlined"
+                fullWidth
+                error={!!error}
+                helperText={error}
+              />
+            )}
+            renderOption={(props, vehicle) => (
+              <ListItem
+                {...props}
+                sx={{
+                  backgroundColor:
+                    vehicle.status === "Pending" ? "#e8f5e9" : "#ffebee", // Green for Pending, Red for others
+                }}
+              >
+                <ListItemText
+                  primary={`${vehicle.chassisNo} - ${vehicle.maker} (${vehicle.year})`}
+                  secondary={`Status: ${vehicle.status}`}
+                />
+                <ListItemSecondaryAction>
+                  <IconButton
+                    edge="end"
+                    aria-label="add"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addToTransport(vehicle);
+                    }}
+                  >
+                    <AddIcon />
+                  </IconButton>
+                </ListItemSecondaryAction>
+              </ListItem>
+            )}
+          />
+        </Box>
       </Paper>
 
       {/* Vehicles in Transport */}
@@ -409,47 +435,30 @@ export default function TransportBookingForm() {
           </Typography>
         ) : (
           <Box>
-            <Box display="grid" gridTemplateColumns="1fr 1fr 1fr 1fr 1fr 1fr" gap={2} sx={{ fontWeight: "bold", mb: 1 }}>
+            {/* Grid Header */}
+            <Box display="grid" gridTemplateColumns="1fr 1fr 1fr 1fr" gap={2} sx={{ fontWeight: "bold", mb: 1 }}>
               <Typography variant="body1">Vehicle ID</Typography>
               <Typography variant="body1">Chassis No</Typography>
-              <Typography variant="body1">Amount (Yen)</Typography>
-              <Typography variant="body1">10% Add (Yen)</Typography>
-              <Typography variant="body1">Total (Yen)</Typography>
-              <Typography variant="body1">Total (USD)</Typography>
+              <Typography variant="body1">Share of Total (USD)</Typography>
+              <Typography variant="body1">Action</Typography>
             </Box>
+            {/* Grid Rows */}
             {transportData.vehicles.map((vehicle, index) => (
-              <Box key={index} display="grid" gridTemplateColumns="1fr 1fr 1fr 1fr 1fr 1fr" gap={2} alignItems="center" mb={1}>
+              <Box
+                key={index}
+                display="grid"
+                gridTemplateColumns="1fr 1fr 1fr 1fr"
+                gap={2}
+                alignItems="center"
+                mb={1}
+              >
                 <Typography variant="body1">{vehicle.id}</Typography>
                 <Typography variant="body1">{vehicle.chassisNo}</Typography>
                 <TextField
                   type="number"
-                  label="Amount (Yen)"
+                  label="Share of Total (USD)"
                   variant="outlined"
-                  value={vehicle.amount}
-                  onChange={(e) => updateVehicleTransport(index, "amount", e.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  type="number"
-                  label="10% Add (Yen)"
-                  variant="outlined"
-                  value={(vehicle.tenPercentAdd || 0).toFixed(2)}
-                  InputProps={{ readOnly: true }}
-                  fullWidth
-                />
-                <TextField
-                  type="number"
-                  label="Total (Yen)"
-                  variant="outlined"
-                  value={(vehicle.totalamount || 0).toFixed(2)}
-                  InputProps={{ readOnly: true }}
-                  fullWidth
-                />
-                <TextField
-                  type="number"
-                  label="Total (USD)"
-                  variant="outlined"
-                  value={(vehicle.totaldollers || 0).toFixed(2)}
+                  value={(perVehicleDollars || 0).toFixed(2)}
                   InputProps={{ readOnly: true }}
                   fullWidth
                 />
@@ -463,20 +472,6 @@ export default function TransportBookingForm() {
                 </Button>
               </Box>
             ))}
-            <Box mt={2} display="flex" gap={2}>
-              <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                Total Amount (Yen): {totalAmountYen.toFixed(2)}
-              </Typography>
-              <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                10% Add (Yen): {tenPercentAdd.toFixed(2)}
-              </Typography>
-              <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                Grand Total (Yen): {totalAmount.toFixed(2)}
-              </Typography>
-              <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                Grand Total (USD): {totalDollars.toFixed(2)}
-              </Typography>
-            </Box>
           </Box>
         )}
       </Paper>

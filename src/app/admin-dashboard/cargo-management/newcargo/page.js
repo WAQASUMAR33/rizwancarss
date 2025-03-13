@@ -1,12 +1,26 @@
 "use client";
 import { useEffect, useState } from "react";
-import { TextField, Button as MuiButton, Select, MenuItem, FormControl, InputLabel } from "@mui/material";
+import {
+  TextField,
+  Button as MuiButton,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+} from "@mui/material";
 import { Plus, Trash } from "lucide-react";
 import { useSelector } from "react-redux";
 
 export default function NewCargoBooking() {
-  const [vehicles, setVehicles] = useState([]);
-  const [searchChassisNo, setSearchChassisNo] = useState("");
+  const [allVehicles, setAllVehicles] = useState([]); // Store all vehicles for dropdown
+  const [selectedVehicles, setSelectedVehicles] = useState({}); // Track selected vehicle for each container
   const [seaPorts, setSeaPorts] = useState([]);
   const [exchangeRate, setExchangeRate] = useState(0.0067); // Default JPY to USD rate
   const [cargoData, setCargoData] = useState({
@@ -43,7 +57,6 @@ export default function NewCargoBooking() {
     admin_id: 0,
     containerDetails: [], // Array of container details based on volume
   });
-  const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
@@ -68,30 +81,44 @@ export default function NewCargoBooking() {
     fetchExchangeRate();
   }, []);
 
-  // Sync admin_id and initialize containerDetails based on volume
+  // Fetch all vehicles with status "Transport" or "Inspection"
   useEffect(() => {
-    setCargoData((prev) => {
-      const volume = parseInt(prev.volume) || 0;
-      const newContainerDetails = Array.from({ length: volume }, (_, i) => ({
-        consigneeName: "",
-        notifyParty: "",
-        shipperPer: "",
-        bookingNo: prev.bookingNo,
-        note: "",
-        imagePath: "",
-        added_by: userid || 0,
-        admin_id: userid || 0,
-        containerItems: [],
-        imageFile: null, // For file upload
-      }));
-      return {
-        ...prev,
-        added_by: userid || 0,
-        admin_id: userid || 0,
-        containerDetails: newContainerDetails,
-      };
-    });
-  }, [userid, cargoData.volume, cargoData.bookingNo]);
+    const fetchVehicles = async () => {
+      try {
+        const response = await fetch("/api/admin/vehicles");
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to fetch vehicles");
+        }
+        const vehiclesData = await response.json();
+        const vehiclesArray = vehiclesData.data || vehiclesData;
+        if (!Array.isArray(vehiclesArray)) {
+          throw new Error("Vehicles data is not an array");
+        }
+
+        // Filter vehicles with status "Transport" or "Inspection"
+        const filteredVehicles = vehiclesArray
+          .filter((vehicle) => vehicle.status === "Transport" || vehicle.status === "Inspection")
+          .map((vehicle) => ({
+            id: vehicle.id,
+            chassisNo: vehicle.chassisNo,
+            maker: vehicle.maker,
+            year: vehicle.year,
+            color: vehicle.color,
+            engineType: vehicle.engineType,
+            status: vehicle.status,
+          }));
+
+        setAllVehicles(filteredVehicles);
+        setError("");
+      } catch (err) {
+        console.error("Error fetching vehicles:", err);
+        setError("Error fetching vehicles: " + err.message);
+        setAllVehicles([]);
+      }
+    };
+    fetchVehicles();
+  }, []);
 
   // Fetch sea ports
   useEffect(() => {
@@ -107,6 +134,68 @@ export default function NewCargoBooking() {
     };
     fetchSeaPorts();
   }, []);
+
+  // Initialize containerDetails and admin_id only when userid changes
+  useEffect(() => {
+    setCargoData((prev) => {
+      const volume = parseInt(prev.volume) || 0;
+      const newContainerDetails = Array.from({ length: volume }, (_, i) => ({
+        consigneeName: "",
+        notifyParty: "",
+        shipperPer: "",
+        bookingNo: prev.bookingNo,
+        note: "",
+        imagePath: "",
+        added_by: userid || 0,
+        admin_id: userid || 0,
+        containerItems: [],
+        imageFile: null,
+      }));
+      return {
+        ...prev,
+        added_by: userid || 0,
+        admin_id: userid || 0,
+        containerDetails: newContainerDetails,
+      };
+    });
+    setSelectedVehicles({});
+  }, [userid]);
+
+  // Update containerDetails when volume changes
+  useEffect(() => {
+    setCargoData((prev) => {
+      const volume = parseInt(prev.volume) || 0;
+      const currentLength = prev.containerDetails.length;
+      let newContainerDetails = [...prev.containerDetails];
+
+      if (volume > currentLength) {
+        // Add new containers
+        newContainerDetails = [
+          ...newContainerDetails,
+          ...Array.from({ length: volume - currentLength }, (_, i) => ({
+            consigneeName: "",
+            notifyParty: "",
+            shipperPer: "",
+            bookingNo: prev.bookingNo,
+            note: "",
+            imagePath: "",
+            added_by: userid || 0,
+            admin_id: userid || 0,
+            containerItems: [],
+            imageFile: null,
+          })),
+        ];
+      } else if (volume < currentLength) {
+        // Remove excess containers
+        newContainerDetails = newContainerDetails.slice(0, volume);
+      }
+
+      return {
+        ...prev,
+        containerDetails: newContainerDetails,
+      };
+    });
+  }, [cargoData.volume, userid]);
 
   // Calculate totals and distribute net_total_amount_dollars across vehicles
   useEffect(() => {
@@ -128,21 +217,41 @@ export default function NewCargoBooking() {
     );
     const amountPerVehicle = totalVehicles > 0 ? netTotalDollars / totalVehicles : 0;
 
-    setCargoData((prev) => ({
-      ...prev,
-      freight_amount_dollars: freightAmount * exchangeRate,
-      net_total_amount: netTotalAmount,
-      net_total_amount_dollars: netTotalDollars,
-      totalAmount1: totalAmount1,
-      totalAmount1_dollars: totalAmount1Dollars,
-      containerDetails: prev.containerDetails.map((container) => ({
-        ...container,
-        containerItems: container.containerItems.map((item) => ({
-          ...item,
-          amount: amountPerVehicle,
-        })),
-      })),
-    }));
+    setCargoData((prev) => {
+      // Check if we need to update containerDetails
+      const shouldUpdateItems = prev.containerDetails.some((container) =>
+        container.containerItems.some((item) => item.amount !== amountPerVehicle)
+      );
+
+      if (
+        prev.freight_amount_dollars === freightAmount * exchangeRate &&
+        prev.net_total_amount === netTotalAmount &&
+        prev.net_total_amount_dollars === netTotalDollars &&
+        prev.totalAmount1 === totalAmount1 &&
+        prev.totalAmount1_dollars === totalAmount1Dollars &&
+        !shouldUpdateItems
+      ) {
+        return prev; // No update needed
+      }
+
+      return {
+        ...prev,
+        freight_amount_dollars: freightAmount * exchangeRate,
+        net_total_amount: netTotalAmount,
+        net_total_amount_dollars: netTotalDollars,
+        totalAmount1: totalAmount1,
+        totalAmount1_dollars: totalAmount1Dollars,
+        containerDetails: shouldUpdateItems
+          ? prev.containerDetails.map((container) => ({
+              ...container,
+              containerItems: container.containerItems.map((item) => ({
+                ...item,
+                amount: amountPerVehicle,
+              })),
+            }))
+          : prev.containerDetails,
+      };
+    });
   }, [
     cargoData.freight_amount,
     cargoData.vanning_charges,
@@ -150,65 +259,61 @@ export default function NewCargoBooking() {
     cargoData.surrender_fee,
     cargoData.bl_fee,
     cargoData.radiation_fee,
-    cargoData.containerDetails,
     exchangeRate,
   ]);
 
-  const searchVehicle = async () => {
-    if (!searchChassisNo) {
-      setError("Please enter a chassis number");
-      return;
-    }
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/admin/invoice-management/VehicleSearch/${searchChassisNo}`);
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Vehicle not found");
-      }
-      const result = await response.json();
-      setVehicles([result.data]);
-      setError("");
-    } catch (err) {
-      setError(err.message);
-      setVehicles([]);
-    } finally {
-      setLoading(false);
-    }
+  const handleVehicleSelect = (containerIndex, vehicle) => {
+    setSelectedVehicles((prev) => ({
+      ...prev,
+      [containerIndex]: vehicle || null,
+    }));
+    setError("");
   };
 
-  const addToCargo = (vehicle, containerIndex) => {
-    fetch(`/api/admin/invoice-management/VehicleSearch/${vehicle.chassisNo}`)
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to fetch vehicle status");
-        return response.json();
-      })
-      .then((result) => {
-        const fullVehicle = result.data;
-        if (fullVehicle.status === "Transport" || fullVehicle.status === "Inspection") {
-          setCargoData((prev) => {
-            const updatedContainers = [...prev.containerDetails];
-            const newItemNo = updatedContainers[containerIndex].containerItems.length + 1;
-            updatedContainers[containerIndex].containerItems.push({
-              itemNo: newItemNo.toString(),
-              vehicleId: fullVehicle.id,
-              chassisNo: fullVehicle.chassisNo,
-              year: fullVehicle.year.toString(),
-              color: fullVehicle.color,
-              cc: fullVehicle.engineType,
-              amount: 0, // Will be updated by useEffect
-            });
-            return { ...prev, containerDetails: updatedContainers };
-          });
-          setVehicles([]);
-          setSearchChassisNo("");
-        } else {
-          alert(`Cannot add vehicle. Current status: ${fullVehicle.status}`);
-        }
-      })
-      .catch((err) => {
-        setError("Error checking vehicle status: " + err.message);
-      });
+  const addToCargo = (containerIndex) => {
+    const vehicle = selectedVehicles[containerIndex];
+    if (!vehicle) {
+      setError("Please select a vehicle to add.");
+      return;
+    }
+
+    // Check if vehicle is already added in any container
+    const isAlreadyAdded = cargoData.containerDetails.some((container) =>
+      container.containerItems.some((item) => item.vehicleId === vehicle.id)
+    );
+    if (isAlreadyAdded) {
+      setError(`Vehicle with Chassis No ${vehicle.chassisNo} is already added to a container.`);
+      return;
+    }
+
+    // Add vehicle to container
+    setCargoData((prev) => {
+      const updatedContainers = [...prev.containerDetails];
+      const containerItems = updatedContainers[containerIndex].containerItems;
+      const newItemNo = containerItems.length + 1;
+
+      // Ensure the vehicle isn't already in the containerItems
+      if (!containerItems.some((item) => item.vehicleId === vehicle.id)) {
+        updatedContainers[containerIndex].containerItems.push({
+          itemNo: newItemNo.toString(),
+          vehicleId: vehicle.id,
+          chassisNo: vehicle.chassisNo,
+          year: vehicle.year.toString(),
+          color: vehicle.color,
+          cc: vehicle.engineType,
+          amount: 0, // Will be updated by useEffect
+        });
+      }
+
+      return { ...prev, containerDetails: updatedContainers };
+    });
+
+    // Reset the selected vehicle for this container
+    setSelectedVehicles((prev) => ({
+      ...prev,
+      [containerIndex]: null,
+    }));
+    setError("");
   };
 
   const updateContainerDetail = (index, field, value) => {
@@ -232,7 +337,9 @@ export default function NewCargoBooking() {
   const removeVehicle = (containerIndex, itemIndex) => {
     setCargoData((prev) => {
       const updatedContainers = [...prev.containerDetails];
-      updatedContainers[containerIndex].containerItems = updatedContainers[containerIndex].containerItems
+      updatedContainers[containerIndex].containerItems = updatedContainers[
+        containerIndex
+      ].containerItems
         .filter((_, i) => i !== itemIndex)
         .map((item, i) => ({ ...item, itemNo: (i + 1).toString() }));
       return { ...prev, containerDetails: updatedContainers };
@@ -240,7 +347,10 @@ export default function NewCargoBooking() {
   };
 
   const handleInputChange = (field, value) => {
-    setCargoData((prev) => ({ ...prev, [field]: value }));
+    setCargoData((prev) => {
+      const updatedValue = field === "volume" ? parseInt(value) || 0 : value;
+      return { ...prev, [field]: updatedValue };
+    });
     if (field === "receiptImage" && value) {
       setImagePreview(value[0] ? URL.createObjectURL(value[0]) : null);
     }
@@ -398,6 +508,7 @@ export default function NewCargoBooking() {
         containerDetails: [],
       });
       setImagePreview(null);
+      setSelectedVehicles({});
     } catch (error) {
       console.error("Error submitting cargo booking data:", error);
       alert(`Failed to submit: ${error.message}`);
@@ -407,64 +518,245 @@ export default function NewCargoBooking() {
   };
 
   return (
-    <div className="flex flex-col bg-[#f1f6f9] w-full h-full rounded p-4">
+    <div className="flex flex-col bg-white w-full h-full rounded p-4">
       <h1 className="text-3xl font-bold mb-4">New Cargo Booking</h1>
 
       {/* Cargo Booking Details */}
       <div className="p-4 border rounded-lg bg-white mb-4">
         <h2 className="text-xl font-semibold pb-2">Cargo Booking Details</h2>
         <div className="grid md:grid-cols-4 grid-cols-1 gap-4">
-          <TextField label="Actual Shipper" variant="outlined" value={cargoData.actualShipper} onChange={(e) => handleInputChange("actualShipper", e.target.value)} fullWidth />
-          <TextField label="CY Open" variant="outlined" value={cargoData.cyOpen} onChange={(e) => handleInputChange("cyOpen", e.target.value)} fullWidth />
-          <TextField label="Booking No" variant="outlined" value={cargoData.bookingNo} onChange={(e) => handleInputChange("bookingNo", e.target.value)} fullWidth />
-          <TextField type="date" label="ETD" variant="outlined" value={cargoData.etd} onChange={(e) => handleInputChange("etd", e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
-          <TextField type="date" label="CY Cut Off" variant="outlined" value={cargoData.cyCutOff} onChange={(e) => handleInputChange("cyCutOff", e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
-          <TextField type="date" label="ETA" variant="outlined" value={cargoData.eta} onChange={(e) => handleInputChange("eta", e.target.value)} InputLabelProps={{ shrink: true }} fullWidth />
-          <TextField type="number" label="Volume (No. of Containers)" variant="outlined" value={cargoData.volume} onChange={(e) => handleInputChange("volume", e.target.value)} fullWidth />
-          <TextField label="Carrier" variant="outlined" value={cargoData.carrier} onChange={(e) => handleInputChange("carrier", e.target.value)} fullWidth />
-          <TextField label="Vessel" variant="outlined" value={cargoData.vessel} onChange={(e) => handleInputChange("vessel", e.target.value)} fullWidth />
+          <TextField
+            label="Actual Shipper"
+            variant="outlined"
+            value={cargoData.actualShipper}
+            onChange={(e) => handleInputChange("actualShipper", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="CY Open"
+            variant="outlined"
+            value={cargoData.cyOpen}
+            onChange={(e) => handleInputChange("cyOpen", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Booking No"
+            variant="outlined"
+            value={cargoData.bookingNo}
+            onChange={(e) => handleInputChange("bookingNo", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="date"
+            label="ETD"
+            variant="outlined"
+            value={cargoData.etd}
+            onChange={(e) => handleInputChange("etd", e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            type="date"
+            label="CY Cut Off"
+            variant="outlined"
+            value={cargoData.cyCutOff}
+            onChange={(e) => handleInputChange("cyCutOff", e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            type="date"
+            label="ETA"
+            variant="outlined"
+            value={cargoData.eta}
+            onChange={(e) => handleInputChange("eta", e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Volume (No. of Containers)"
+            variant="outlined"
+            value={cargoData.volume}
+            onChange={(e) => handleInputChange("volume", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Carrier"
+            variant="outlined"
+            value={cargoData.carrier}
+            onChange={(e) => handleInputChange("carrier", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Vessel"
+            variant="outlined"
+            value={cargoData.vessel}
+            onChange={(e) => handleInputChange("vessel", e.target.value)}
+            fullWidth
+          />
           <FormControl fullWidth variant="outlined">
             <InputLabel>Port of Loading</InputLabel>
-            <Select value={cargoData.portOfLoading} onChange={(e) => handleInputChange("portOfLoading", e.target.value)} label="Port of Loading">
-              <MenuItem value=""><em>Select Port</em></MenuItem>
+            <Select
+              value={cargoData.portOfLoading}
+              onChange={(e) => handleInputChange("portOfLoading", e.target.value)}
+              label="Port of Loading"
+            >
+              <MenuItem value="">
+                <em>Select Port</em>
+              </MenuItem>
               {seaPorts.map((port) => (
-                <MenuItem key={port.id} value={port.title || port.name}>{port.title || port.name}</MenuItem>
+                <MenuItem key={port.id} value={port.title || port.name}>
+                  {port.title || port.name}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
           <FormControl fullWidth variant="outlined">
             <InputLabel>Port of Discharge</InputLabel>
-            <Select value={cargoData.portOfDischarge} onChange={(e) => handleInputChange("portOfDischarge", e.target.value)} label="Port of Discharge">
-              <MenuItem value=""><em>Select Port</em></MenuItem>
+            <Select
+              value={cargoData.portOfDischarge}
+              onChange={(e) => handleInputChange("portOfDischarge", e.target.value)}
+              label="Port of Discharge"
+            >
+              <MenuItem value="">
+                <em>Select Port</em>
+              </MenuItem>
               {seaPorts.map((port) => (
-                <MenuItem key={port.id} value={port.title || port.name}>{port.title || port.name}</MenuItem>
+                <MenuItem key={port.id} value={port.title || port.name}>
+                  {port.title || port.name}
+                </MenuItem>
               ))}
             </Select>
           </FormControl>
-          <TextField label="Cargo Mode" variant="outlined" value={cargoData.cargoMode} onChange={(e) => handleInputChange("cargoMode", e.target.value)} fullWidth />
-          <TextField label="Place of Issue" variant="outlined" value={cargoData.placeOfIssue} onChange={(e) => handleInputChange("placeOfIssue", e.target.value)} fullWidth />
+          <TextField
+            label="Cargo Mode"
+            variant="outlined"
+            value={cargoData.cargoMode}
+            onChange={(e) => handleInputChange("cargoMode", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Place of Issue"
+            variant="outlined"
+            value={cargoData.placeOfIssue}
+            onChange={(e) => handleInputChange("placeOfIssue", e.target.value)}
+            fullWidth
+          />
           <FormControl fullWidth variant="outlined">
             <InputLabel>Freight Term</InputLabel>
-            <Select value={cargoData.freightTerm} onChange={(e) => handleInputChange("freightTerm", e.target.value)} label="Freight Term">
+            <Select
+              value={cargoData.freightTerm}
+              onChange={(e) => handleInputChange("freightTerm", e.target.value)}
+              label="Freight Term"
+            >
               <MenuItem value="pre paid">Pre Paid</MenuItem>
               <MenuItem value="collect">Collect</MenuItem>
             </Select>
           </FormControl>
-          <TextField label="Shipper Name" variant="outlined" value={cargoData.shipperName} onChange={(e) => handleInputChange("shipperName", e.target.value)} fullWidth />
-          <TextField label="Consignee" variant="outlined" value={cargoData.consignee} onChange={(e) => handleInputChange("consignee", e.target.value)} fullWidth />
-          <TextField label="Description of Goods" variant="outlined" value={cargoData.descriptionOfGoods} onChange={(e) => handleInputChange("descriptionOfGoods", e.target.value)} fullWidth />
-          <TextField type="number" label="Freight Amount (Yen)" variant="outlined" value={cargoData.freight_amount} onChange={(e) => handleInputChange("freight_amount", e.target.value)} fullWidth />
-          <TextField type="number" label="Vanning Charges (Yen)" variant="outlined" value={cargoData.vanning_charges} onChange={(e) => handleInputChange("vanning_charges", e.target.value)} fullWidth />
-          <TextField type="number" label="Seal Amount (Yen)" variant="outlined" value={cargoData.seal_amount} onChange={(e) => handleInputChange("seal_amount", e.target.value)} fullWidth />
-          <TextField type="number" label="Surrender Fee (Yen)" variant="outlined" value={cargoData.surrender_fee} onChange={(e) => handleInputChange("surrender_fee", e.target.value)} fullWidth />
-          <TextField type="number" label="BL Fee (Yen)" variant="outlined" value={cargoData.bl_fee} onChange={(e) => handleInputChange("bl_fee", e.target.value)} fullWidth />
-          <TextField type="number" label="Radiation Fee (Yen)" variant="outlined" value={cargoData.radiation_fee} onChange={(e) => handleInputChange("radiation_fee", e.target.value)} fullWidth />
-          <TextField type="number" label="Net Total Amount (Yen)" variant="outlined" value={cargoData.net_total_amount.toFixed(2)} InputProps={{ readOnly: true }} fullWidth />
-          <TextField type="number" label="Net Total Amount (USD)" variant="outlined" value={cargoData.net_total_amount_dollars.toFixed(2)} InputProps={{ readOnly: true }} fullWidth />
+          <TextField
+            label="Shipper Name"
+            variant="outlined"
+            value={cargoData.shipperName}
+            onChange={(e) => handleInputChange("shipperName", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Consignee"
+            variant="outlined"
+            value={cargoData.consignee}
+            onChange={(e) => handleInputChange("consignee", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            label="Description of Goods"
+            variant="outlined"
+            value={cargoData.descriptionOfGoods}
+            onChange={(e) => handleInputChange("descriptionOfGoods", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Freight Amount (Yen)"
+            variant="outlined"
+            value={cargoData.freight_amount}
+            onChange={(e) => handleInputChange("freight_amount", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Vanning Charges (Yen)"
+            variant="outlined"
+            value={cargoData.vanning_charges}
+            onChange={(e) => handleInputChange("vanning_charges", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Seal Amount (Yen)"
+            variant="outlined"
+            value={cargoData.seal_amount}
+            onChange={(e) => handleInputChange("seal_amount", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Surrender Fee (Yen)"
+            variant="outlined"
+            value={cargoData.surrender_fee}
+            onChange={(e) => handleInputChange("surrender_fee", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="BL Fee (Yen)"
+            variant="outlined"
+            value={cargoData.bl_fee}
+            onChange={(e) => handleInputChange("bl_fee", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Radiation Fee (Yen)"
+            variant="outlined"
+            value={cargoData.radiation_fee}
+            onChange={(e) => handleInputChange("radiation_fee", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Net Total Amount (Yen)"
+            variant="outlined"
+            value={cargoData.net_total_amount.toFixed(2)}
+            InputProps={{ readOnly: true }}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Net Total Amount (USD)"
+            variant="outlined"
+            value={cargoData.net_total_amount_dollars.toFixed(2)}
+            InputProps={{ readOnly: true }}
+            fullWidth
+          />
           <div className="flex flex-col">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Receipt</label>
-            <TextField type="file" variant="outlined" onChange={(e) => handleInputChange("receiptImage", e.target.files)} inputProps={{ accept: "image/*" }} fullWidth />
-            {imagePreview && <img src={imagePreview} alt="Receipt Preview" className="w-32 h-32 object-cover rounded-lg border mt-2" />}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Upload Receipt
+            </label>
+            <TextField
+              type="file"
+              variant="outlined"
+              onChange={(e) => handleInputChange("receiptImage", e.target.files)}
+              inputProps={{ accept: "image/*" }}
+              fullWidth
+            />
+            {imagePreview && (
+              <img
+                src={imagePreview}
+                alt="Receipt Preview"
+                className="w-32 h-32 object-cover rounded-lg border mt-2"
+              />
+            )}
           </div>
         </div>
       </div>
@@ -474,72 +766,160 @@ export default function NewCargoBooking() {
         <div key={index} className="p-4 border rounded-lg bg-white mb-4">
           <h2 className="text-xl font-semibold pb-2">Container {index + 1} Details</h2>
           <div className="grid md:grid-cols-4 grid-cols-1 gap-4">
-            <TextField label="Consignee Name" variant="outlined" value={container.consigneeName} onChange={(e) => updateContainerDetail(index, "consigneeName", e.target.value)} fullWidth />
-            <TextField label="Notify Party" variant="outlined" value={container.notifyParty} onChange={(e) => updateContainerDetail(index, "notifyParty", e.target.value)} fullWidth />
-            <TextField label="Shipper Per" variant="outlined" value={container.shipperPer} onChange={(e) => updateContainerDetail(index, "shipperPer", e.target.value)} fullWidth />
-            <TextField label="Note" variant="outlined" value={container.note} onChange={(e) => updateContainerDetail(index, "note", e.target.value)} fullWidth />
+            <TextField
+              label="Consignee Name"
+              variant="outlined"
+              value={container.consigneeName}
+              onChange={(e) =>
+                updateContainerDetail(index, "consigneeName", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Notify Party"
+              variant="outlined"
+              value={container.notifyParty}
+              onChange={(e) =>
+                updateContainerDetail(index, "notifyParty", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Shipper Per"
+              variant="outlined"
+              value={container.shipperPer}
+              onChange={(e) =>
+                updateContainerDetail(index, "shipperPer", e.target.value)
+              }
+              fullWidth
+            />
+            <TextField
+              label="Note"
+              variant="outlined"
+              value={container.note}
+              onChange={(e) => updateContainerDetail(index, "note", e.target.value)}
+              fullWidth
+            />
             <div className="flex flex-col">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Container Image</label>
-              <TextField type="file" variant="outlined" onChange={(e) => handleContainerImageChange(index, e.target.files)} inputProps={{ accept: "image/*" }} fullWidth />
-              {container.imagePath && <img src={container.imagePath} alt={`Container ${index + 1} Preview`} className="w-32 h-32 object-cover rounded-lg border mt-2" />}
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Container Image
+              </label>
+              <TextField
+                type="file"
+                variant="outlined"
+                onChange={(e) => handleContainerImageChange(index, e.target.files)}
+                inputProps={{ accept: "image/*" }}
+                fullWidth
+              />
+              {container.imagePath && (
+                <img
+                  src={container.imagePath}
+                  alt={`Container ${index + 1} Preview`}
+                  className="w-32 h-32 object-cover rounded-lg border mt-2"
+                />
+              )}
             </div>
           </div>
 
-          {/* Search Vehicle for this Container */}
+          {/* Select Vehicle for this Container */}
           <div className="mt-4">
-            <h3 className="text-lg font-semibold pb-2">Search Vehicle for Container {index + 1}</h3>
+            <h3 className="text-lg font-semibold pb-2">
+              Select Vehicle for Container {index + 1}
+            </h3>
             <div className="flex gap-4 items-center">
-              <TextField label="Enter Chassis Number" variant="outlined" value={searchChassisNo} onChange={(e) => setSearchChassisNo(e.target.value)} fullWidth />
-              <MuiButton variant="contained" color="success" onClick={searchVehicle} disabled={loading} startIcon={<Plus />}>
-                {loading ? "Searching..." : "Search"}
+              <FormControl fullWidth variant="outlined">
+                <InputLabel>Select Vehicle</InputLabel>
+                <Select
+                  value={selectedVehicles[index] || ""}
+                  onChange={(e) => handleVehicleSelect(index, e.target.value)}
+                  label="Select Vehicle"
+                  renderValue={(selected) =>
+                    selected
+                      ? `${selected.chassisNo} - ${selected.maker} (${selected.year})`
+                      : "Select a vehicle"
+                  }
+                >
+                  <MenuItem value="">
+                    <em>Select a vehicle</em>
+                  </MenuItem>
+                  {allVehicles.map((vehicle) => (
+                    <MenuItem key={vehicle.id} value={vehicle}>
+                      {`${vehicle.chassisNo} - ${vehicle.maker} (${vehicle.year}) - ${vehicle.status}`}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <MuiButton
+                variant="contained"
+                color="success"
+                onClick={() => addToCargo(index)}
+                startIcon={<Plus />}
+                disabled={!selectedVehicles[index]}
+              >
+                Add
               </MuiButton>
             </div>
             {error && <p className="text-red-500 mt-2">{error}</p>}
-            {vehicles.map((vehicle, vIndex) => (
-              <div key={vIndex} className="mt-4 p-2 border rounded flex justify-between items-center">
-                <div>
-                  <p>Vehicle ID: {vehicle.id}</p>
-                  <p>Chassis No: {vehicle.chassisNo}</p>
-                  <p>Maker: {vehicle.maker}</p>
-                  <p>Year: {vehicle.year}</p>
-                </div>
-                <MuiButton variant="contained" color="success" onClick={() => addToCargo(vehicle, index)} startIcon={<Plus />}>
-                  Add to Container {index + 1}
-                </MuiButton>
-              </div>
-            ))}
           </div>
 
           {/* Container Items */}
           <div className="mt-4">
-            <h3 className="text-lg font-semibold pb-2">Container {index + 1} Items</h3>
+            <h3 className="text-lg font-semibold pb-2">
+              Container {index + 1} Items
+            </h3>
             {container.containerItems.length === 0 ? (
               <p>No items added yet</p>
             ) : (
-              <div className="grid md:grid-cols-7 grid-cols-1 gap-4 font-semibold mb-2">
-                <span>Item No</span>
-                <span>Vehicle ID</span>
-                <span>Chassis No</span>
-                <span>Year</span>
-                <span>Color</span>
-                <span>CC</span>
-                <span>Amount (USD)</span>
-              </div>
+              <TableContainer component={Paper}>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Item No</TableCell>
+                      <TableCell>Vehicle ID</TableCell>
+                      <TableCell>Chassis No</TableCell>
+                      <TableCell>Year</TableCell>
+                      <TableCell>Color</TableCell>
+                      <TableCell>CC</TableCell>
+                      <TableCell>Amount (USD)</TableCell>
+                      <TableCell>Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {container.containerItems.map((item, itemIndex) => (
+                      <TableRow key={item.vehicleId + "-" + itemIndex}>
+                        <TableCell>{item.itemNo}</TableCell>
+                        <TableCell>{item.vehicleId}</TableCell>
+                        <TableCell>{item.chassisNo}</TableCell>
+                        <TableCell>{item.year}</TableCell>
+                        <TableCell>{item.color}</TableCell>
+                        <TableCell>{item.cc}</TableCell>
+                        <TableCell>
+                          <TextField
+                            type="number"
+                            variant="outlined"
+                            value={item.amount.toFixed(2)}
+                            InputProps={{ readOnly: true }}
+                            size="small"
+                            fullWidth
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <MuiButton
+                            variant="contained"
+                            color="error"
+                            onClick={() => removeVehicle(index, itemIndex)}
+                            startIcon={<Trash />}
+                            size="small"
+                          >
+                            Remove
+                          </MuiButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             )}
-            {container.containerItems.map((item, itemIndex) => (
-              <div key={itemIndex} className="grid md:grid-cols-7 grid-cols-1 gap-4 mb-2 items-center">
-                <span>{item.itemNo}</span>
-                <span>{item.vehicleId}</span>
-                <span>{item.chassisNo}</span>
-                <span>{item.year}</span>
-                <span>{item.color}</span>
-                <span>{item.cc}</span>
-                <TextField type="number" variant="outlined" value={item.amount.toFixed(2)} InputProps={{ readOnly: true }} fullWidth />
-                <MuiButton variant="contained" color="error" onClick={() => removeVehicle(index, itemIndex)} startIcon={<Trash />}>
-                  Remove
-                </MuiButton>
-              </div>
-            ))}
           </div>
         </div>
       ))}

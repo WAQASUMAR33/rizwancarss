@@ -207,12 +207,14 @@ model Transport {
   id            Int      @id @default(autoincrement())
   date          DateTime
   deliveryDate  DateTime
+  invoiceno     String  @default("")
   port          String
   company       String
   amount           Float    @default(0)
   tenPercentAdd         Float    @default(0)
   totalamount    Float    @default(0)
   totaldollers  Float @default(0)
+  v_amount      Float  @default(0)
   imagePath     String   @db.Text @default("")
   vehicleNo     String
   admin_id      Int      @default(0) // Replaced added_by with admin_id as foreign key
