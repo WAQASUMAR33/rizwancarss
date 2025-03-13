@@ -135,6 +135,10 @@ const InspectionList = () => {
               <TableCell>#</TableCell>
               <TableCell>Date</TableCell>
               <TableCell>Company</TableCell>
+              <TableCell>Invoice Amnt</TableCell>
+              <TableCell>Tax</TableCell>
+              <TableCell>Total</TableCell>
+              <TableCell>Total($)</TableCell>
               <TableCell>Vehicle No</TableCell>
               <TableCell>Amount</TableCell>
               <TableCell>Actions</TableCell>
@@ -144,11 +148,16 @@ const InspectionList = () => {
             {paginatedInspections.length > 0 ? (
               paginatedInspections.map((inspection, index) => (
                 <TableRow key={inspection.id} hover>
-                  <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+                  <TableCell>{inspection.invoiceno}</TableCell>
                   <TableCell>{new Date(inspection.date).toLocaleDateString()}</TableCell>
                   <TableCell>{inspection.company}</TableCell>
+                  <TableCell>{inspection.invoice_amount}</TableCell>
+                  <TableCell>{inspection.invoice_tax}</TableCell>
+                  <TableCell>{inspection.invoice_total}</TableCell>
+                  <TableCell>{inspection.invoice_amount_dollers}</TableCell>
+                 
                   <TableCell>{inspection.vehicleNo}</TableCell>
-                  <TableCell>${(inspection.amount || 0).toFixed(2)}</TableCell>
+                  <TableCell>${(inspection.vamount_doller || 0).toFixed(2)}</TableCell>
                   <TableCell>
                     <Button
                       variant="contained"
