@@ -135,7 +135,7 @@ export async function POST(request) {
             totalamount: parseFloat(totalamount),
             totaldollers: parseFloat(totaldollers),
             imagePath: imagePath || "",
-            vehicleNo: vehicle.vehicleNo,
+            vehicleNo: vehicle.id.toString(),
             admin_id: parseInt(admin_id),
             createdAt: new Date(createdAt),
             updatedAt: new Date(updatedAt),

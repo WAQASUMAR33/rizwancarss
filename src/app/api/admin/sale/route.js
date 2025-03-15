@@ -159,25 +159,96 @@ export async function POST(request) {
   }
 }
 
-  export async function GET(request) {
-    try {
-        // Fetch all sale vehicles
-        const saleVehicles = await prisma.sale_Vehicle.findMany({
-            orderBy: { createdAt: 'desc' }, // Optional: latest first
+export async function GET(request) {
+  try {
+    // Fetch all sale vehicles with related AddVehicle data
+    const saleVehicles = await prisma.sale_Vehicle.findMany({
+      orderBy: { createdAt: 'desc' }, // Optional: latest first
+      include: {
+        Admin: {
+          select: { username: true }, // Include admin username if needed
+        },
+      },
+    });
+
+    // Calculate cost price for each Sale_Vehicle
+    const saleVehiclesWithCostPrice = await Promise.all(
+      saleVehicles.map(async (saleVehicle) => {
+        const vehicleNo = saleVehicle.vehicleNo;
+
+        // 1. Find the AddVehicle record for this vehicleNo to get vehicleId
+        const addVehicle = await prisma.addVehicle.findFirst({
+          where: { chassisNo: vehicleNo },
+          select: { id: true, totalAmount_dollers: true },
         });
 
-        return NextResponse.json(
-            {
-                message: "Sale vehicles retrieved successfully",
-                data: saleVehicles,
-                error: false,
-            },
-            { status: 200 }
-        );
-    } catch (error) {
-        return NextResponse.json(
-            { message: "Failed to fetch sale vehicles", error: true },
-            { status: 500 }
-        );
-    }
+        const vehicleId = addVehicle?.id;
+
+        // 2. ContainerItemDetail: Sum amount for this vehicle
+        const containerItemsTotal = vehicleId
+          ? await prisma.containerItemDetail.aggregate({
+              where: { vehicleId: vehicleId },
+              _sum: { amount: true },
+            })
+          : { _sum: { amount: 0 } };
+
+        // 3. AddVehicle: Get totalAmount_dollers
+        const addVehicleTotal = addVehicle?.totalAmount_dollers || 0;
+
+        // 4. Transport: Sum totaldollers for this vehicleNo
+        const transportTotal = await prisma.transport.aggregate({
+          where: { vehicleNo: vehicleNo },
+          _sum: { totaldollers: true },
+        });
+
+        // 5. Inspection: Sum invoice_amount_dollers for this vehicleNo
+        const inspectionTotal = await prisma.inspection.aggregate({
+          where: { vehicleNo: vehicleNo },
+          _sum: { invoice_amount_dollers: true },
+        });
+
+        // 6. PortCollect: Sum totalAmount for this vehicleNo (assuming USD)
+        const portCollectTotal = await prisma.portCollect.aggregate({
+          where: { vehicleNo: vehicleNo },
+          _sum: { totalAmount: true },
+        });
+
+        // 7. ShowRoom_Vehicle: Sum vtotalAmount for this vehicleNo (assuming USD)
+        const showRoomVehicleTotal = await prisma.showRoom_Vehicle.aggregate({
+          where: { vehicleNo: vehicleNo },
+          _sum: { vtotalAmount: true },
+        });
+
+        // Calculate total cost price for this vehicle
+        const costPrice =
+          (containerItemsTotal._sum.amount || 0) +
+          (addVehicleTotal || 0) +
+          (transportTotal._sum.totaldollers || 0) +
+          (inspectionTotal._sum.invoice_amount_dollers || 0) +
+          (portCollectTotal._sum.totalAmount || 0) +
+          (showRoomVehicleTotal._sum.vtotalAmount || 0);
+
+        return {
+          ...saleVehicle,
+          costPrice: parseFloat(costPrice.toFixed(2)), // Format to 2 decimal places
+          salePrice: saleVehicle.sale_price, // Rename sale_price for clarity
+        };
+      })
+    );
+
+    return NextResponse.json(
+      {
+        message: "Sale vehicles retrieved successfully with cost prices",
+        data: saleVehiclesWithCostPrice,
+        error: false,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+   
+    return NextResponse.json(
+      { message: "Failed to fetch sale vehicles or calculate cost prices", error: true },
+      { status: 500 }
+    );
+  }
 }

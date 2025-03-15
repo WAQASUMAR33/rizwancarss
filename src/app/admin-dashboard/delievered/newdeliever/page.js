@@ -228,7 +228,7 @@ const DeliveredVehicle = () => {
       }
 
       const vehicleData = vehicles.map((vehicle) => ({
-        vehicleNo: vehicle.vehicleNo,
+        vehicleNo: vehicle.id,
         date: new Date(portCollect.date),
         Transport_charges: charges.Transport_charges,
         othercharges: charges.othercharges,

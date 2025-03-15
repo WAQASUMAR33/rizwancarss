@@ -56,6 +56,7 @@ export async function POST(request) {
           maker: vehicle.maker || "",
           year: vehicle.year || "",
           color: vehicle.color || "",
+          lotnumber: vehicle.lotnumber || "",
           engineType: vehicle.engineType || "",
           auction_amount: parseFloat(vehicle.auction_amount) || 0,
           tenPercentAdd: parseFloat(vehicle.tenPercentAdd) || 0,

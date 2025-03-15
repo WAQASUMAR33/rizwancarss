@@ -229,7 +229,7 @@ export default function SaleVehicle() {
           <StyledCard>
             <CardContent>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: theme.typography.fontWeightBold }}>
-                Search Vehicle
+                Search Chassis No
               </Typography>
               <Stack direction="row" spacing={2} alignItems="center">
                 <TextField

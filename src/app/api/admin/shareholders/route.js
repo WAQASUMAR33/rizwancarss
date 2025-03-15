@@ -1,60 +1,61 @@
-// app/api/admin/users/route.js
+// app/api/admin/shareholders/route.js
 import { NextResponse } from 'next/server';
 import prisma from '@/utils/prisma';
 
+// ✅ POST: Create a new ShareHolder
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { fullname, phonenumber, address, balance, status, adminId } = body;
+    const { name, phonenumber, address, balance, status, adminId } = body;
 
     // Validate required fields
-    if (!fullname || !phonenumber || !address || balance === undefined) {
+    if (!name || !phonenumber || !address || balance === undefined) {
       return NextResponse.json(
-        { message: 'Missing required fields: fullname, phonenumber, address, or balance', status: false },
+        { message: 'Missing required fields: name, phonenumber, address, or balance', status: false },
         { status: 400 }
       );
     }
 
-    const createdUser = await prisma.user.create({
+    const createdShareHolder = await prisma.shareHolders.create({
       data: {
-        fullname,
+        name,
         phonenumber,
         address,
         balance: parseFloat(balance),
-        status: status || 'Active', // Default to 'Active' as per the User model
+        status: status || 'ACTIVE', // Default to 'ACTIVE' as per DistributorStatus enum
         adminId: adminId ? parseInt(adminId) : null, // Optional adminId
       },
     });
 
     return NextResponse.json(
-      { message: 'User created successfully', status: true, data: createdUser },
+      { message: 'ShareHolder created successfully', status: true, data: createdShareHolder },
       { status: 201 }
     );
   } catch (error) {
-   
+  
     return NextResponse.json(
-      { message: 'Failed to create user', status: false, error: error.message },
+      { message: 'Failed to create ShareHolder', status: false, error: error.message },
       { status: 500 }
     );
   }
 }
 
-// ✅ GET: Fetch all users
+// ✅ GET: Fetch all ShareHolders
 export async function GET() {
   try {
-    const users = await prisma.user.findMany({
+    const shareHolders = await prisma.shareHolders.findMany({
       orderBy: { createdAt: 'desc' }, // Sort by creation date
       include: {
         admin: true, // Include related admin data (e.g., admin.fullname)
       },
     });
 
-    return NextResponse.json(users); // Return as array per your original code
+    return NextResponse.json(shareHolders); // Return as array per your original code
   } catch (error) {
-   
+  
     return NextResponse.json(
       {
-        message: 'Failed to fetch users',
+        message: 'Failed to fetch ShareHolders',
         status: false,
         error: error.message,
       },

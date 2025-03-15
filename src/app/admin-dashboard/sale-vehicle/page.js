@@ -246,6 +246,7 @@ const SaleList = () => {
                   <TableCell>ID</TableCell>
                   <TableCell>Vehicle No</TableCell>
                   <TableCell>Date</TableCell>
+                  <TableCell>Cost Price</TableCell>
                   <TableCell>Sale Price</TableCell>
                   <TableCell>Total Amount</TableCell>
                   <TableCell>Actions</TableCell>
@@ -263,7 +264,8 @@ const SaleList = () => {
                       <TableCell>{record.id}</TableCell>
                       <TableCell>{record.vehicleNo}</TableCell>
                       <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
-                      <TableCell>${record.sale_price.toFixed(2)}</TableCell>
+                      <TableCell>${record.costPrice.toFixed(2)}</TableCell>
+                      <TableCell>${record.salePrice.toFixed(2)}</TableCell>
                       <TableCell>${record.totalAmount.toFixed(2)}</TableCell>
                       <TableCell>
                         <IconButton
@@ -365,8 +367,14 @@ const SaleList = () => {
                 </Grid>
                 <Grid item xs={4}>
                   <FieldCard
+                    label="Cost Price"
+                    value={`$${selectedRecord.costPrice.toFixed(2)}`}
+                  />
+                </Grid>
+                <Grid item xs={4}>
+                  <FieldCard
                     label="Sale Price"
-                    value={`$${selectedRecord.sale_price.toFixed(2)}`}
+                    value={`$${selectedRecord.salePrice.toFixed(2)}`}
                   />
                 </Grid>
                 <Grid item xs={4}>

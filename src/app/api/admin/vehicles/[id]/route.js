@@ -78,7 +78,7 @@ export async function GET(request, { params }) {
     const [transport, inspection, portCollect, showroom, sale] =
       await Promise.all([
         prisma.transport.findFirst({
-          where: { vehicleNo: vehicle.chassisNo },
+          where: { vehicleNo: vehicle.id.toString() },
           select: {
             amount: true,
             tenPercentAdd: true,
@@ -87,7 +87,7 @@ export async function GET(request, { params }) {
           },
         }),
         prisma.inspection.findFirst({
-          where: { vehicleNo: vehicle.chassisNo },
+          where: { vehicleNo: vehicle.id.toString() },
           select: {
             invoice_amount: true,
             invoice_tax: true,
@@ -97,7 +97,7 @@ export async function GET(request, { params }) {
           },
         }),
         prisma.portCollect.findFirst({
-          where: { vehicleNo: vehicle.chassisNo },
+          where: { vehicleNo: vehicle.id.toString() },
           select: {
             freight_amount: true,
             port_charges: true,

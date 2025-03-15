@@ -26,7 +26,7 @@ export async function POST(req) {
   
           return await prisma.showRoom_Vehicle.create({
             data: {
-              vehicleNo: vehicle.vehicleNo,
+              vehicleNo: vehicle.vehicleNo.toString(),
               date: new Date(vehicle.date), // Convert to Date object
               Transport_charges,
               othercharges,

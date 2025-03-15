@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../../../utils/prisma';
+import prisma from '@/utils/prisma';
 
 export async function POST(request) {
   try {
@@ -9,7 +9,6 @@ export async function POST(request) {
     const {
       date,
       company,
-      vehicleNo, // Comma-separated string, ignored in favor of individual chassisNos
       invoiceno,
       invoice_amount = 0,
       invoice_tax = 0,
@@ -17,16 +16,22 @@ export async function POST(request) {
       invoice_amount_dollers = 0,
       vamount_doller = 0,
       imagePath = "",
-      admin_id, // The admin submitting the inspection (not used for balance updates here)
-      vehicles, // Array of { id }
+      admin_id,
+      vehicles,
       createdAt,
       updatedAt,
     } = data;
 
     // Validation
-    if (!date || !company || !admin_id || !vehicles || vehicles.length === 0) {
+    const missingFields = [];
+    if (!date) missingFields.push("date");
+    if (!company) missingFields.push("company");
+    if (!admin_id) missingFields.push("admin_id");
+    if (!vehicles || vehicles.length === 0) missingFields.push("vehicles");
+
+    if (missingFields.length > 0) {
       return NextResponse.json(
-        { error: "Missing required fields (date, company, admin_id, vehicles)", status: false },
+        { error: `Missing required fields: ${missingFields.join(", ")}`, status: false },
         { status: 400 }
       );
     }
@@ -35,7 +40,7 @@ export async function POST(request) {
     const vehicleIds = vehicles.map((v) => parseInt(v.id));
     const vehicleData = await prisma.addVehicle.findMany({
       where: { id: { in: vehicleIds } },
-      select: { id: true, chassisNo: true, admin_id: true }, // Assuming admin_id exists in AddVehicle
+      select: { id: true, chassisNo: true, admin_id: true },
     });
 
     // Check for missing vehicles
@@ -82,7 +87,7 @@ export async function POST(request) {
       operations.push(
         prisma.inspection.create({
           data: {
-            vehicleNo: chassisNo,
+            vehicleNo: vehicle.id.toString(), // Changed from chassisNo to vehicle.id
             company,
             date: new Date(date),
             invoice_amount: parseFloat(invoice_amount),
@@ -92,7 +97,7 @@ export async function POST(request) {
             vamount_doller: parseFloat(vamount_doller),
             invoiceno: invoiceno || `INS-${Date.now()}-${vehicle.id}`,
             imagePath,
-            admin_id: parseInt(admin_id), // Submitting admin
+            admin_id: parseInt(admin_id),
             createdAt: new Date(createdAt || Date.now()),
             updatedAt: new Date(updatedAt || Date.now()),
           },
@@ -113,7 +118,7 @@ export async function POST(request) {
       const currentBalance = adminBalanceMap[vehicleAdminId] || 0;
       const vehiclesForAdmin = vehicleData.filter((v) => v.admin_id === vehicleAdminId).length;
       const totalInvoiceDollersForAdmin = invoice_amount_dollers * vehiclesForAdmin;
-      const newBalance = currentBalance + totalInvoiceDollersForAdmin; // Adding to balance
+      const newBalance = currentBalance + totalInvoiceDollersForAdmin;
 
       // Update admin balance
       operations.push(
@@ -128,7 +133,7 @@ export async function POST(request) {
         prisma.ledger.create({
           data: {
             admin_id: vehicleAdminId,
-            debit: 0, // Assuming we're crediting (adding to balance)
+            debit: 0,
             credit: totalInvoiceDollersForAdmin,
             balance: newBalance,
             description: `Inspection booking credited ${totalInvoiceDollersForAdmin} USD for ${vehiclesForAdmin} vehicle(s)`,
@@ -152,7 +157,6 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Error in POST inspection:", error);
     return NextResponse.json(
       {
         error: "Internal server error",
@@ -166,8 +170,6 @@ export async function POST(request) {
   }
 }
 
-
-
 export async function GET(request) {
   try {
     console.log("Fetching inspections from API...");
@@ -175,18 +177,18 @@ export async function GET(request) {
       orderBy: { createdAt: "desc" },
     });
 
-    // Join with AddVehicle based on vehicleNo matching chassisNo
+    // Join with AddVehicle based on vehicleNo matching id (now an integer)
     const inspectionsWithVehicles = await Promise.all(
       inspections.map(async (inspection) => {
         const vehicle = await prisma.addVehicle.findFirst({
           where: {
-            chassisNo: inspection.vehicleNo,
+            id: parseInt(inspection.vehicleNo), // Changed from chassisNo to id
           },
         });
 
         return {
           ...inspection,
-          vehicle: vehicle || null, // Include vehicle data or null if not found
+          vehicle: vehicle || null,
         };
       })
     );
@@ -202,7 +204,6 @@ export async function GET(request) {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error fetching inspections:", error);
     return NextResponse.json(
       {
         error: "Internal server error",
@@ -215,4 +216,3 @@ export async function GET(request) {
     await prisma.$disconnect();
   }
 }
-

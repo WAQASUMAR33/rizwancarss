@@ -184,6 +184,7 @@ export default function NewBookingForm() {
           bidAmount10per: 0,
           recycleAmount: 0,
           auction_house: "",
+          lotnumber: "", // Added lotnumber field
           commissionAmount: 0,
           numberPlateTax: 0,
           repairCharges: 0,
@@ -281,7 +282,7 @@ export default function NewBookingForm() {
       let jsonPayload = { ...invoiceData };
 
       if (!jsonPayload.number || jsonPayload.number === "") throw new Error("Invoice number is required.");
-   
+
       jsonPayload.amountYen = parseFloat(jsonPayload.amountYen) || 0;
       jsonPayload.amount_doller = parseFloat(jsonPayload.amount_doller) || 0;
       jsonPayload.added_by = parseInt(userid);
@@ -473,33 +474,24 @@ export default function NewBookingForm() {
             onChange={(e) => handleInputChange("auctionHouse", e.target.value)}
             fullWidth
           />
-
-
-            <TextField
-              type="file"
-              variant="outlined"
-              onChange={(e) => handleInputChange("imagePath", e.target.files)}
-              inputProps={{ accept: "image/*" }}
-              fullWidth
-              label="Upload Invoice Image"
-            />
-            
-        
-          
+          <TextField
+            type="file"
+            variant="outlined"
+            onChange={(e) => handleInputChange("imagePath", e.target.files)}
+            inputProps={{ accept: "image/*" }}
+            fullWidth
+            label="Upload Invoice Image"
+          />
           {invoiceImagePreview && (
-              <Box mt={2}>
-                <img
-                  src={invoiceImagePreview}
-                  alt="Invoice Preview"
-                  style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8 }}
-                />
-              </Box>
-            )}
-          
-          <Box gridColumn="span 2">
-           
-            
-          </Box>
+            <Box mt={2}>
+              <img
+                src={invoiceImagePreview}
+                alt="Invoice Preview"
+                style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8 }}
+              />
+            </Box>
+          )}
+          <Box gridColumn="span 2"></Box>
         </Box>
       </Paper>
 
@@ -562,6 +554,13 @@ export default function NewBookingForm() {
                 onChange={(e) => handleVehicleChange(index, "auction_house", e.target.value)}
                 fullWidth
               />
+              <TextField
+                label="Lot Number"
+                variant="outlined"
+                value={vehicle.lotnumber}
+                onChange={(e) => handleVehicleChange(index, "lotnumber", e.target.value)}
+                fullWidth
+              />
               <FormControl variant="outlined" fullWidth>
                 <InputLabel>Sending Port</InputLabel>
                 <Select
@@ -596,22 +595,8 @@ export default function NewBookingForm() {
                   ))}
                 </Select>
               </FormControl>
-              <TextField
-                type="number"
-                label="Auction Amount"
-                variant="outlined"
-                value={vehicle.auction_amount}
-                onChange={(e) => handleVehicleChange(index, "auction_amount", e.target.value)}
-                fullWidth
-              />
-              <TextField
-                type="number"
-                label="Ten Percent Add"
-                variant="outlined"
-                value={vehicle.tenPercentAdd}
-                InputProps={{ readOnly: true }}
-                fullWidth
-              />
+
+
               <TextField
                 type="number"
                 label="Bid Amount"
@@ -628,6 +613,24 @@ export default function NewBookingForm() {
                 InputProps={{ readOnly: true }}
                 fullWidth
               />
+              
+              <TextField
+                type="number"
+                label="Auction Amount"
+                variant="outlined"
+                value={vehicle.auction_amount}
+                onChange={(e) => handleVehicleChange(index, "auction_amount", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Ten Percent Add"
+                variant="outlined"
+                value={vehicle.tenPercentAdd}
+                InputProps={{ readOnly: true }}
+                fullWidth
+              />
+             
               <TextField
                 type="number"
                 label="Recycle Amount"
@@ -738,7 +741,6 @@ export default function NewBookingForm() {
                   label="Status"
                 >
                   <MenuItem value="Pending">Pending</MenuItem>
-                
                 </Select>
               </FormControl>
               <TextField

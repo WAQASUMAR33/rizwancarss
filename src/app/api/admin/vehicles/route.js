@@ -52,7 +52,7 @@ export async function GET() {
         const [transport, inspection, portCollect, showroom, sale] =
           await Promise.all([
             prisma.transport.findFirst({
-              where: { vehicleNo: vehicle.chassisNo },
+              where: { vehicleNo: vehicle.id.toString() },
               select: {
                 amount: true,
                 tenPercentAdd: true,
@@ -61,7 +61,7 @@ export async function GET() {
               },
             }),
             prisma.inspection.findFirst({
-              where: { vehicleNo: vehicle.chassisNo },
+              where: { vehicleNo: vehicle.id.toString() },
               select: {
                 invoice_amount: true,
                 invoice_tax: true,
@@ -160,7 +160,7 @@ export async function GET() {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error occurred";
 
-    console.error("Error fetching vehicles:", error);
+ 
 
     return NextResponse.json(
       {

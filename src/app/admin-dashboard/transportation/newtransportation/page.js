@@ -53,7 +53,6 @@ export default function TransportBookingForm() {
   const [tenPercentAdd, setTenPercentAdd] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
   const [totalDollars, setTotalDollars] = useState(0);
-  const [perVehicleDollars, setPerVehicleDollars] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
@@ -96,7 +95,7 @@ export default function TransportBookingForm() {
 
   useEffect(() => {
     const transportAmountYen = parseFloat(transportData.transportAmount) || 0;
-    const tenPercent = transportAmountYen * 0.1;
+    const tenPercent = transportAmountYen ;
     const totalWithTenPercent = transportAmountYen + tenPercent;
     const totalInDollars = totalWithTenPercent * exchangeRate;
 
@@ -105,21 +104,34 @@ export default function TransportBookingForm() {
     setTotalAmount(totalWithTenPercent);
     setTotalDollars(totalInDollars);
 
+    // Recalculate per vehicle amount based on custom values or total if no custom values
+    const customTotalDollars = transportData.vehicles.reduce((sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0), 0);
     const vehicleCount = transportData.vehicles.length;
-    const perVehicleDollarAmount = vehicleCount > 0 ? totalInDollars / vehicleCount : 0;
-    setPerVehicleDollars(perVehicleDollarAmount);
-  }, [transportData.transportAmount, transportData.vehicles.length, exchangeRate]);
+    const defaultPerVehicleDollarAmount = vehicleCount > 0 ? totalInDollars / vehicleCount : 0;
+    transportData.vehicles.forEach((vehicle, index) => {
+      if (!vehicle.totaldollers || vehicle.totaldollers === 0) {
+        setTransportData((prev) => {
+          const updatedVehicles = [...prev.vehicles];
+          updatedVehicles[index] = { ...updatedVehicles[index], totaldollers: defaultPerVehicleDollarAmount };
+          return { ...prev, vehicles: updatedVehicles };
+        });
+      }
+    });
+  }, [transportData.transportAmount, transportData.vehicles, exchangeRate]);
 
   const addToTransport = (vehicle) => {
     if (!vehicle) return;
 
     // Check if vehicle is already added
-    if (transportData.vehicles.some(v => v.id === vehicle.id)) {
+    if (transportData.vehicles.some((v) => v.id === vehicle.id)) {
       setError("Vehicle already added to the list");
       return;
     }
 
-    // Use the status directly from the vehicle data (already filtered to "Pending")
+    // Calculate initial share based on totalDollars
+    const vehicleCount = transportData.vehicles.length + 1;
+    const initialShare = vehicleCount > 0 ? totalDollars / vehicleCount : 0;
+
     setTransportData((prev) => ({
       ...prev,
       vehicles: [
@@ -127,7 +139,7 @@ export default function TransportBookingForm() {
         {
           id: vehicle.id,
           chassisNo: vehicle.chassisNo,
-          totaldollers: perVehicleDollars,
+          totaldollers: initialShare, // Initial share, editable later
         },
       ],
     }));
@@ -149,6 +161,15 @@ export default function TransportBookingForm() {
       const file = value[0];
       setImagePreview(file ? URL.createObjectURL(file) : null);
     }
+  };
+
+  const handleVehicleAmountChange = (index, value) => {
+    const newValue = parseFloat(value) || 0;
+    setTransportData((prev) => {
+      const updatedVehicles = [...prev.vehicles];
+      updatedVehicles[index] = { ...updatedVehicles[index], totaldollers: newValue };
+      return { ...prev, vehicles: updatedVehicles };
+    });
   };
 
   const convertToBase64 = (file) => {
@@ -196,15 +217,15 @@ export default function TransportBookingForm() {
         amount: totalAmountYen,
         tenPercentAdd: tenPercentAdd,
         totalamount: totalAmount,
-        totaldollers: totalDollars,
+        totaldollers: transportData.vehicles.reduce((sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0), 0),
         imagePath: imagePath || "",
         admin_id: transportData.admin_id,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        vehicles: transportData.vehicles.map(v => ({
+        vehicles: transportData.vehicles.map((v) => ({
           id: v.id,
           vehicleNo: v.chassisNo,
-          totaldollers: perVehicleDollars,
+          totaldollers: v.totaldollers,
         })),
       };
 
@@ -458,9 +479,10 @@ export default function TransportBookingForm() {
                   type="number"
                   label="Share of Total (USD)"
                   variant="outlined"
-                  value={(perVehicleDollars || 0).toFixed(2)}
-                  InputProps={{ readOnly: true }}
+                  value={vehicle.totaldollers || ""}
+                  onChange={(e) => handleVehicleAmountChange(index, e.target.value)}
                   fullWidth
+                  inputProps={{ min: 0, step: "0.01" }}
                 />
                 <Button
                   variant="contained"

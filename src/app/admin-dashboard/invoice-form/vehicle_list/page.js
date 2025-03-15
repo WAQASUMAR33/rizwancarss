@@ -19,6 +19,8 @@ import {
   Modal,
   IconButton,
   Link,
+  Stack,
+  TablePagination,
 } from "@mui/material";
 import { Clear as ClearIcon, Download as DownloadIcon } from "@mui/icons-material";
 
@@ -28,8 +30,8 @@ const VehiclesList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
+  const [currentPage, setCurrentPage] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   const [detailedVehicle, setDetailedVehicle] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -54,16 +56,36 @@ const VehiclesList = () => {
     fetchVehicles();
   }, []);
 
-  // Filter vehicles when searching
+  // Filter vehicles when searching (updated to include all fields)
   useEffect(() => {
-    const filtered = vehicles.filter((vehicle) =>
-      (vehicle.chassisNo || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (vehicle.maker || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (vehicle.admin?.fullname || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (vehicle.seaPort?.name || "").toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filtered = vehicles.filter((vehicle) => {
+      const query = searchQuery.toLowerCase();
+
+      // Convert all fields to strings and handle null/undefined safely
+      const chassisNo = (vehicle.chassisNo || "").toLowerCase();
+      const maker = (vehicle.maker || "").toLowerCase();
+      const year = (vehicle.year || "").toString().toLowerCase();
+      const color = (vehicle.color || "").toLowerCase();
+      const adminName = (vehicle.admin?.fullname || "").toLowerCase();
+      const seaPortName = (vehicle.seaPort?.name || "").toLowerCase();
+      const totalAmount = (vehicle.totalAmount_dollers || 0).toString().toLowerCase();
+      const status = (vehicle.status || "").toLowerCase();
+
+      // Check if any field matches the search query
+      return (
+        chassisNo.includes(query) ||
+        maker.includes(query) ||
+        year.includes(query) ||
+        color.includes(query) ||
+        adminName.includes(query) ||
+        seaPortName.includes(query) ||
+        totalAmount.includes(query) ||
+        status.includes(query)
+      );
+    });
+
     setFilteredVehicles(filtered);
-    setCurrentPage(1);
+    setCurrentPage(0); // Reset to first page on filter change
   }, [searchQuery, vehicles]);
 
   // Fetch detailed vehicle data
@@ -95,120 +117,19 @@ const VehiclesList = () => {
   }, [selectedVehicle]);
 
   // Pagination Logic
-  const totalPages = Math.ceil(filteredVehicles.length / itemsPerPage);
   const paginatedVehicles = filteredVehicles.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
+    currentPage * itemsPerPage,
+    (currentPage + 1) * itemsPerPage
   );
 
-  // Function to structure amounts for individual tables (excluding Invoice)
-  const getAmountsTables = (totalAmounts) => {
-    if (!totalAmounts) return [];
+  // Pagination Handlers for TablePagination
+  const handleChangePage = (event, newPage) => {
+    setCurrentPage(newPage);
+  };
 
-    const tables = [];
-
-    // Auction (AddVehicle)
-    tables.push({
-      category: "Auction",
-      headers: [
-        "Auction Amount",
-        "10% Add",
-        "Bid Amount",
-        "Bid 10%",
-        "Commission",
-        "Repair Charges",
-        "Total Yen",
-        "Total USD",
-      ],
-      data: {
-        auctionAmount: totalAmounts.addVehicle.auction_amount || 0,
-        tenPercentAdd: totalAmounts.addVehicle.tenPercentAdd || 0,
-        bidAmount: totalAmounts.addVehicle.bidAmount || 0,
-        bidAmount10per: totalAmounts.addVehicle.bidAmount10per || 0,
-        commissionAmount: totalAmounts.addVehicle.commissionAmount || 0,
-        repairCharges: totalAmounts.addVehicle.repairCharges || 0,
-        totalAmountYen: totalAmounts.addVehicle.totalAmount_yen || 0,
-        totalAmountDollars: totalAmounts.addVehicle.totalAmount_dollers || 0,
-      },
-    });
-
-    // Transport
-    tables.push({
-      category: "Transport",
-      headers: ["Amount", "10% Add", "Total Amount", "Total USD"],
-      data: {
-        amount: totalAmounts.transport.amount || 0,
-        tenPercentAdd: totalAmounts.transport.tenPercentAdd || 0,
-        totalAmount: totalAmounts.transport.totalamount || 0,
-        totalDollars: totalAmounts.transport.totaldollers || 0,
-      },
-    });
-
-    // Inspection
-    tables.push({
-      category: "Inspection",
-      headers: ["Invoice Amount", "Invoice Tax", "Invoice Total", "Invoice USD", "Vehicle USD"],
-      data: {
-        invoiceAmount: totalAmounts.inspection.invoice_amount || 0,
-        invoiceTax: totalAmounts.inspection.invoice_tax || 0,
-        invoiceTotal: totalAmounts.inspection.invoice_total || 0,
-        invoiceAmountDollars: totalAmounts.inspection.invoice_amount_dollers || 0,
-        vAmountDollars: totalAmounts.inspection.vamount_doller || 0,
-      },
-    });
-
-    // Port Collect
-    tables.push({
-      category: "Port Collect",
-      headers: ["Freight", "Port Charges", "Clearing", "Other Charges", "Total Amount", "Vehicle Amount"],
-      data: {
-        freightAmount: totalAmounts.portCollect.freight_amount || 0,
-        portCharges: totalAmounts.portCollect.port_charges || 0,
-        clearingCharges: totalAmounts.portCollect.clearingcharges || 0,
-        otherCharges: totalAmounts.portCollect.othercharges || 0,
-        totalAmount: totalAmounts.portCollect.totalAmount || 0,
-        vAmount: totalAmounts.portCollect.vamount || 0,
-      },
-    });
-
-    // Showroom
-    tables.push({
-      category: "Showroom",
-      headers: ["Transport", "Other Charges", "Total Amount", "Repair Charges", "Vehicle Amount", "Vehicle Total"],
-      data: {
-        transportCharges: totalAmounts.showroom.Transport_charges || 0,
-        otherCharges: totalAmounts.showroom.othercharges || 0,
-        totalAmount: totalAmounts.showroom.totalAmount || 0,
-        vRepairCharges: totalAmounts.showroom.vRepair_charges || 0,
-        vAmount: totalAmounts.showroom.vamount || 0,
-        vTotalAmount: totalAmounts.showroom.vtotalAmount || 0,
-      },
-    });
-
-    // Sale
-    tables.push({
-      category: "Sale",
-      headers: ["Commission", "Other Charges", "Total Amount", "Sale Price"],
-      data: {
-        commissionAmount: totalAmounts.sale.commission_amount || 0,
-        otherCharges: totalAmounts.sale.othercharges || 0,
-        totalAmount: totalAmounts.sale.totalAmount || 0,
-        salePrice: totalAmounts.sale.sale_price || 0,
-      },
-    });
-
-    // Container Items
-    totalAmounts.containerItems?.forEach((item, index) => {
-      tables.push({
-        category: `Container Item ${index + 1}`,
-        headers: ["Amount"],
-        data: {
-          amount: item.amount || 0,
-        },
-      });
-    });
-
-    return tables;
+  const handleChangeRowsPerPage = (event) => {
+    setItemsPerPage(parseInt(event.target.value, 10));
+    setCurrentPage(0);
   };
 
   // Function to get status background color
@@ -235,24 +156,34 @@ const VehiclesList = () => {
 
   return (
     <Box sx={{ maxWidth: "1200px", mx: "auto", p: 3, bgcolor: "#fff", borderRadius: 2, boxShadow: 3 }}>
-      <Typography variant="h5" gutterBottom>Vehicles List</Typography>
-
-      {/* Search Input */}
-      <TextField
-        fullWidth
-        variant="outlined"
-        placeholder="Search by Chassis No, Maker, Admin, or Sea Port..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
+      {/* Title and Search Box in a Single Row */}
+      <Stack
+        direction={{ xs: "column", sm: "row" }}
+        spacing={2}
+        alignItems={{ xs: "stretch", sm: "center" }}
+        justifyContent="space-between"
         sx={{ mb: 3 }}
-        InputProps={{
-          endAdornment: searchQuery && (
-            <IconButton onClick={() => setSearchQuery("")} size="small">
-              <ClearIcon />
-            </IconButton>
-          ),
-        }}
-      />
+      >
+        <Typography variant="h5">Vehicles List</Typography>
+        <TextField
+          variant="outlined"
+          placeholder="Search by Chassis No, Maker, Admin, or Sea Port..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          sx={{
+            width: { xs: "100%", sm: "auto" },
+            maxWidth: { sm: 400 },
+            flexShrink: 0,
+          }}
+          InputProps={{
+            endAdornment: searchQuery && (
+              <IconButton onClick={() => setSearchQuery("")} size="small">
+                <ClearIcon />
+              </IconButton>
+            ),
+          }}
+        />
+      </Stack>
 
       {/* Vehicles Table */}
       <TableContainer component={Paper}>
@@ -275,7 +206,7 @@ const VehiclesList = () => {
             {paginatedVehicles.length > 0 ? (
               paginatedVehicles.map((vehicle, index) => (
                 <TableRow key={vehicle.id} hover>
-                  <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
+                  <TableCell>{vehicle.id}</TableCell>
                   <TableCell>{vehicle.chassisNo}</TableCell>
                   <TableCell>{vehicle.maker}</TableCell>
                   <TableCell>{vehicle.year}</TableCell>
@@ -309,34 +240,17 @@ const VehiclesList = () => {
         </Table>
       </TableContainer>
 
-      {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <Box display="flex" justifyContent="center" mt={3} gap={1}>
-          <Button
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-            variant="outlined"
-          >
-            Prev
-          </Button>
-          {Array.from({ length: totalPages }, (_, index) => (
-            <Button
-              key={index + 1}
-              onClick={() => setCurrentPage(index + 1)}
-              variant={currentPage === index + 1 ? "contained" : "outlined"}
-            >
-              {index + 1}
-            </Button>
-          ))}
-          <Button
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-            variant="outlined"
-          >
-            Next
-          </Button>
-        </Box>
-      )}
+      {/* TablePagination */}
+      <TablePagination
+        rowsPerPageOptions={[5, 10, 25]}
+        component="div"
+        count={filteredVehicles.length}
+        rowsPerPage={itemsPerPage}
+        page={currentPage}
+        onPageChange={handleChangePage}
+        onRowsPerPageChange={handleChangeRowsPerPage}
+        sx={{ mt: 3 }}
+      />
 
       {/* Vehicle Details Modal */}
       <Modal
@@ -404,71 +318,293 @@ const VehiclesList = () => {
                 <Card>
                   <CardContent>
                     <Typography variant="subtitle1" gutterBottom>All Amounts</Typography>
-                    {getAmountsTables(detailedVehicle.totalAmounts).length > 0 ? (
-                      getAmountsTables(detailedVehicle.totalAmounts).map((table, idx) => (
-                        <Box key={idx} sx={{ mb: 3 }}>
+                    {detailedVehicle && detailedVehicle.totalAmounts ? (
+                      <>
+                        {/* Auction Table */}
+                        <Box sx={{ mb: 3 }}>
                           <Typography
                             variant="subtitle2"
                             gutterBottom
                             sx={{
-                              backgroundColor: "#1976d2", // Blue background for title
-                              color: "#fff", // White text
                               padding: "8px 16px",
                               borderRadius: "8px",
                               display: "inline-block",
                               boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                             }}
                           >
-                            {table.category}
+                            Auction
                           </Typography>
                           <TableContainer component={Paper}>
                             <Table size="small">
                               <TableHead>
-                                <TableRow sx={{ bgcolor: "#42a5f5" }}> {/* Vibrant blue for headers */}
-                                  {table.headers.map((header, hIdx) => (
-                                    <TableCell
-                                      key={hIdx}
-                                      align="left"
-                                      sx={{
-                                        borderRight: "1px solid #e0e0e0",
-                                        "&:last-child": { borderRight: "none" },
-                                        color: "#fff", // White text for headers
-                                        fontWeight: "bold",
-                                      }}
-                                    >
-                                      {header}
-                                    </TableCell>
-                                  ))}
+                                <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Bid Amount</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Bid 10%</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Auction Amount</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>10% Add</TableCell>
+                                 
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Recycle Amount</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Number Plate</TableCell>
+
+
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Commission</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Repair Charges</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Total Yen</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "none", color: "#000", fontWeight: "bold" }}>Total USD</TableCell>
                                 </TableRow>
                               </TableHead>
                               <TableBody>
                                 <TableRow hover>
-                                  {table.headers.map((header, hIdx) => {
-                                    const key = header
-                                      .toLowerCase()
-                                      .replace(/ /g, "")
-                                      .replace(/%/g, "Percent")
-                                      .replace(/usd/g, "Dollars");
-                                    const value = table.data[key] || table.data[key.replace("amount", "Amount")] || 0;
-                                    return (
-                                      <TableCell
-                                        key={hIdx}
-                                        align="left"
-                                        sx={{
-                                          borderRight: "1px solid #e0e0e0",
-                                          "&:last-child": { borderRight: "none" },
-                                        }}
-                                      >
-                                        {value !== 0 ? value.toFixed(2) : "-"}
-                                      </TableCell>
-                                    );
-                                  })}
+                                 
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.bidAmount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.bidAmount10per?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.auction_amount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.tenPercentAdd?.toFixed(2) || "-"}
+                                  </TableCell>
+
+
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.recycleAmount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.numberPlateTax?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.commissionAmount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.repairCharges?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.totalAmount_yen?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "none" }}>
+                                    {detailedVehicle.totalAmounts.addVehicle?.totalAmount_dollers?.toFixed(2) || "-"}
+                                  </TableCell>
                                 </TableRow>
                               </TableBody>
                             </Table>
                           </TableContainer>
                         </Box>
-                      ))
+
+                        {/* Transport Table */}
+                        <Box sx={{ mb: 3 }}>
+                          <Typography
+                            variant="subtitle2"
+                            gutterBottom
+                            sx={{
+                              padding: "8px 16px",
+                              borderRadius: "8px",
+                              display: "inline-block",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                            }}
+                          >
+                            Transport
+                          </Typography>
+                          <TableContainer component={Paper}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+                                  <TableCell align="left" sx={{ borderRight: "none", color: "#000", fontWeight: "bold" }}>Total USD</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                <TableRow hover>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.transport?.v_amount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                 
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </Box>
+
+                        {/* Inspection Table */}
+                        <Box sx={{ mb: 3 }}>
+                          <Typography
+                            variant="subtitle2"
+                            gutterBottom
+                            sx={{
+                              padding: "8px 16px",
+                              borderRadius: "8px",
+                              display: "inline-block",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                            }}
+                          >
+                            Inspection
+                          </Typography>
+                          <TableContainer component={Paper}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Total Amount</TableCell>
+                                                              </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                <TableRow hover>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.inspection?.vamount_doller?.toFixed(2) || "-"}
+                                  </TableCell>
+                                 
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </Box>
+
+                        {/* Port Collect Table */}
+                        <Box sx={{ mb: 3 }}>
+                          <Typography
+                            variant="subtitle2"
+                            gutterBottom
+                            sx={{
+                              padding: "8px 16px",
+                              borderRadius: "8px",
+                              display: "inline-block",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                            }}
+                          >
+                            Port Collect
+                          </Typography>
+                          <TableContainer component={Paper}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Freight</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                <TableRow hover>
+                                  <TableCell align="left" sx={{ borderRight: "none" }}>
+                                    {detailedVehicle.totalAmounts.portCollect?.vamount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </Box>
+
+                        {/* Showroom Table */}
+                        <Box sx={{ mb: 3 }}>
+                          <Typography
+                            variant="subtitle2"
+                            gutterBottom
+                            sx={{
+                              padding: "8px 16px",
+                              borderRadius: "8px",
+                              display: "inline-block",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                            }}
+                          >
+                            Showroom
+                          </Typography>
+                          <TableContainer component={Paper}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Total Amount</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                <TableRow hover>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.showroom?.vtotalAmount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </Box>
+
+                        {/* Sale Table */}
+                        <Box sx={{ mb: 3 }}>
+                          <Typography
+                            variant="subtitle2"
+                            gutterBottom
+                            sx={{
+                              padding: "8px 16px",
+                              borderRadius: "8px",
+                              display: "inline-block",
+                              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                            }}
+                          >
+                            Sale
+                          </Typography>
+                          <TableContainer component={Paper}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Commission</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Other Charges</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Total Amount</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "none", color: "#000", fontWeight: "bold" }}>Sale Price</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                <TableRow hover>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.sale?.commission_amount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.sale?.othercharges?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0" }}>
+                                    {detailedVehicle.totalAmounts.sale?.totalAmount?.toFixed(2) || "-"}
+                                  </TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "none" }}>
+                                    {detailedVehicle.totalAmounts.sale?.sale_price?.toFixed(2) || "-"}
+                                  </TableCell>
+                                </TableRow>
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </Box>
+
+                        {/* Container Item Table (Single table for first item if exists) */}
+                        {detailedVehicle.totalAmounts.containerItems && detailedVehicle.totalAmounts.containerItems.length > 0 && (
+                          <Box sx={{ mb: 3 }}>
+                            <Typography
+                              variant="subtitle2"
+                              gutterBottom
+                              sx={{
+                                padding: "8px 16px",
+                                borderRadius: "8px",
+                                display: "inline-block",
+                                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                              }}
+                            >
+                              Container Item 1
+                            </Typography>
+                            <TableContainer component={Paper}>
+                              <Table size="small">
+                                <TableHead>
+                                  <TableRow sx={{ bgcolor: "#f5f5f5" }}>
+                                    <TableCell align="left" sx={{ borderRight: "none", color: "#000", fontWeight: "bold" }}>Amount</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  <TableRow hover>
+                                    <TableCell align="left" sx={{ borderRight: "none" }}>
+                                      {detailedVehicle.totalAmounts.containerItems[0]?.amount?.toFixed(2) || "-"}
+                                    </TableCell>
+                                  </TableRow>
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
+                          </Box>
+                        )}
+                      </>
                     ) : (
                       <Typography>No amounts available for this vehicle.</Typography>
                     )}

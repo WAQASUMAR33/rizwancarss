@@ -46,6 +46,7 @@ export default function NewCargoBooking() {
     surrender_fee: 0,
     bl_fee: 0,
     radiation_fee: 0,
+    booking_service_charges: 0, // New field
     totalAmount1: 0,
     totalAmount1_dollars: 0,
     freight_amount: 0,
@@ -197,7 +198,7 @@ export default function NewCargoBooking() {
     });
   }, [cargoData.volume, userid]);
 
-  // Calculate totals and distribute net_total_amount_dollars across vehicles
+  // Calculate totals and distribute amount based on freightTerm
   useEffect(() => {
     const freightAmount = parseFloat(cargoData.freight_amount) || 0;
     const vanning = parseFloat(cargoData.vanning_charges) || 0;
@@ -205,8 +206,9 @@ export default function NewCargoBooking() {
     const surrender = parseFloat(cargoData.surrender_fee) || 0;
     const bl = parseFloat(cargoData.bl_fee) || 0;
     const radiation = parseFloat(cargoData.radiation_fee) || 0;
+    const bookingServiceCharges = parseFloat(cargoData.booking_service_charges) || 0;
 
-    const netTotalAmount = freightAmount + vanning + seal + surrender + bl + radiation;
+    const netTotalAmount = freightAmount + vanning + seal + surrender + bl + radiation + bookingServiceCharges;
     const netTotalDollars = netTotalAmount * exchangeRate;
     const totalAmount1 = freightAmount; // Assuming totalAmount1 is freight only in Yen
     const totalAmount1Dollars = totalAmount1 * exchangeRate;
@@ -215,10 +217,18 @@ export default function NewCargoBooking() {
       (sum, container) => sum + container.containerItems.length,
       0
     );
-    const amountPerVehicle = totalVehicles > 0 ? netTotalDollars / totalVehicles : 0;
+
+    // Calculate amount per vehicle based on freightTerm
+    let amountPerVehicle = 0;
+    if (cargoData.freightTerm === "pre paid" && totalVehicles > 0) {
+      amountPerVehicle = netTotalDollars / totalVehicles; // Include freight in total
+    } else if (cargoData.freightTerm === "collect" && totalVehicles > 0) {
+      const otherCharges = vanning + seal + surrender + bl + radiation + bookingServiceCharges;
+      const otherChargesDollars = otherCharges * exchangeRate;
+      amountPerVehicle = otherChargesDollars / totalVehicles; // Exclude freight
+    }
 
     setCargoData((prev) => {
-      // Check if we need to update containerDetails
       const shouldUpdateItems = prev.containerDetails.some((container) =>
         container.containerItems.some((item) => item.amount !== amountPerVehicle)
       );
@@ -259,7 +269,10 @@ export default function NewCargoBooking() {
     cargoData.surrender_fee,
     cargoData.bl_fee,
     cargoData.radiation_fee,
+    cargoData.booking_service_charges,
+    cargoData.freightTerm, // Added to trigger recalculation when freightTerm changes
     exchangeRate,
+    cargoData.containerDetails,
   ]);
 
   const handleVehicleSelect = (containerIndex, vehicle) => {
@@ -427,6 +440,7 @@ export default function NewCargoBooking() {
         surrender_fee: parseFloat(cargoData.surrender_fee) || 0,
         bl_fee: parseFloat(cargoData.bl_fee) || 0,
         radiation_fee: parseFloat(cargoData.radiation_fee) || 0,
+        booking_service_charges: parseFloat(cargoData.booking_service_charges) || 0,
         totalAmount1: cargoData.totalAmount1,
         totalAmount1_dollars: cargoData.totalAmount1_dollars,
         freight_amount: cargoData.freight_amount,
@@ -496,6 +510,7 @@ export default function NewCargoBooking() {
         surrender_fee: 0,
         bl_fee: 0,
         radiation_fee: 0,
+        booking_service_charges: 0,
         totalAmount1: 0,
         totalAmount1_dollars: 0,
         freight_amount: 0,
@@ -721,6 +736,14 @@ export default function NewCargoBooking() {
             variant="outlined"
             value={cargoData.radiation_fee}
             onChange={(e) => handleInputChange("radiation_fee", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Booking Service Charges (Yen)"
+            variant="outlined"
+            value={cargoData.booking_service_charges}
+            onChange={(e) => handleInputChange("booking_service_charges", e.target.value)}
             fullWidth
           />
           <TextField

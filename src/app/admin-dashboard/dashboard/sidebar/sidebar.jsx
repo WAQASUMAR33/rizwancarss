@@ -118,7 +118,27 @@ const Sidebar = () => {
       roles: ["admin", "sub admin"],
       subitems: [
         { title: "Sea Ports", path: "/admin-dashboard/sea-ports", icon: <Hotel />, roles: ["admin", "sub admin"] },
-        { title: "Distributors", path: "/admin-dashboard/distributors", icon: <Hotel />, roles: ["admin", "sub admin"] },
+      ],
+    },
+
+    {
+      title: "Customer Management",
+      icon: <FiMenu />,
+      roles: ["admin", "sub admin"],
+      subitems: [
+        { title: "Customers", path: "/admin-dashboard/distributers", icon: <Hotel />, roles: ["admin", "sub admin"] },
+        { title: "Ledger", path: "/admin-dashboard/distributers/trnxs", icon: <Hotel />, roles: ["admin", "sub admin"] },
+      ],
+    },
+
+
+    {
+      title: "Share Holders",
+      icon: <FiMenu />,
+      roles: ["admin", "sub admin"],
+      subitems: [
+        { title: "Share Holders", path: "/admin-dashboard/shareholders", icon: <Hotel />, roles: ["admin", "sub admin"] },
+        { title: "Ladger", path: "/admin-dashboard/shareholders/trnxs", icon: <Hotel />, roles: ["admin", "sub admin"] },
       ],
     },
     {
