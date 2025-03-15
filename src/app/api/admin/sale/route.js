@@ -5,13 +5,14 @@ export async function POST(request) {
   try {
     const data = await request.json();
 
-    // Log the incoming data
-    console.log("Received data:", data);
+    // Checkpoint 1: Log incoming data
+    console.log("Checkpoint 1 - Received data:", JSON.stringify(data, null, 2));
 
-    // Validate required fields
+    // Checkpoint 2: Validate required fields
     const requiredFields = ["admin_id", "vehicleNo", "date", "sale_price"];
     for (const field of requiredFields) {
       if (!data[field]) {
+        console.error(`Checkpoint 2 - Validation failed: Missing field ${field}`);
         return NextResponse.json(
           { message: `Missing required field: ${field}`, error: true },
           { status: 400 }
@@ -19,68 +20,87 @@ export async function POST(request) {
       }
     }
 
-    // Ensure admin exists and fetch current balance
-    console.log("Fetching admin with ID:", data.admin_id);
+    // Checkpoint 3: Fetch and validate admin
+    const adminId = parseInt(data.admin_id);
+    console.log("Checkpoint 3 - Fetching admin with ID:", adminId);
     const admin = await prisma.admin.findUnique({
-      where: { id: parseInt(data.admin_id) },
+      where: { id: adminId },
       select: { id: true, balance: true },
     });
     if (!admin) {
-      console.error("Admin not found for ID:", data.admin_id);
+      console.error("Checkpoint 3 - Admin not found for ID:", adminId);
       return NextResponse.json(
         { message: "Admin not found", error: true },
         { status: 404 }
       );
     }
+    console.log("Checkpoint 3 - Admin found:", admin);
 
-    // Ensure vehicle exists and is not already sold
-    console.log("Fetching vehicle with vehicleNo:", data.vehicleNo);
+    // Checkpoint 4: Fetch and validate vehicle
+    const vehicleId = parseInt(data.vehicleNo);
+    console.log("Checkpoint 4 - Fetching vehicle with vehicleNo (ID):", vehicleId);
     const vehicle = await prisma.addVehicle.findUnique({
-      where: { id: parseInt(data.vehicleNo) },
+      where: { id: vehicleId },
     });
     if (!vehicle) {
-      console.error("Vehicle not found for vehicleNo:", data.vehicleNo);
+      console.error("Checkpoint 4 - Vehicle not found for vehicleNo:", vehicleId);
       return NextResponse.json(
-        { message: `Vehicle with vehicleNo ${data.vehicleNo} not found`, error: true },
+        { message: `Vehicle with vehicleNo ${vehicleId} not found`, error: true },
         { status: 404 }
       );
     }
     if (vehicle.status === "Sold") {
-      console.error("Vehicle already sold:", data.vehicleNo);
+      console.error("Checkpoint 4 - Vehicle already sold:", vehicleId);
       return NextResponse.json(
-        { message: `Vehicle ${data.vehicleNo} is already sold`, error: true },
+        { message: `Vehicle ${vehicleId} is already sold`, error: true },
         { status: 400 }
       );
     }
+    console.log("Checkpoint 4 - Vehicle found and not sold:", vehicle);
 
-    // Parse and validate numeric fields
+    // Checkpoint 5: Parse and validate numeric fields
     const salePrice = parseFloat(data.sale_price) || 0;
     const commissionAmount = parseFloat(data.commission_amount) || 0;
     const otherCharges = parseFloat(data.othercharges) || 0;
     const totalAmount = parseFloat(data.totalAmount) || 0;
+    console.log("Checkpoint 5 - Parsed numeric fields:", {
+      salePrice,
+      commissionAmount,
+      otherCharges,
+      totalAmount,
+    });
 
-    // Validate totalAmount
+    // Checkpoint 6: Validate totalAmount
     const calculatedTotal = commissionAmount + otherCharges;
     if (Math.abs(totalAmount - calculatedTotal) > 0.01) {
-      console.warn("totalAmount mismatch - frontend:", totalAmount, "calculated:", calculatedTotal);
+      console.warn(
+        "Checkpoint 6 - totalAmount mismatch - frontend:",
+        totalAmount,
+        "calculated:",
+        calculatedTotal
+      );
     }
 
-    // Get the old balance
+    // Checkpoint 7: Calculate new balance
     const oldBalance = parseFloat(admin.balance) || 0;
-
-    // Calculate new balance: old balance + sale price - (commission + other charges)
     const totalExpenses = commissionAmount + otherCharges;
     const newBalance = oldBalance + salePrice - totalExpenses;
+    console.log("Checkpoint 7 - Balance calculation:", {
+      oldBalance,
+      salePrice,
+      totalExpenses,
+      newBalance,
+    });
 
-    // Use a transaction to ensure all operations succeed or fail together
-    console.log("Starting Prisma transaction...");
+    // Checkpoint 8: Start Prisma transaction
+    console.log("Checkpoint 8 - Starting Prisma transaction...");
     const [saleVehicle, updatedVehicle, ledgerEntryCredit, ledgerEntryDebit, updatedAdmin] =
       await prisma.$transaction([
         // Create the sale vehicle record
         prisma.sale_Vehicle.create({
           data: {
-            admin_id: parseInt(data.admin_id),
-            vehicleNo: data.vehicleNo,
+            admin_id: adminId,
+            vehicleNo: vehicleId, // Use parsed vehicleId
             date: new Date(data.date),
             commission_amount: commissionAmount,
             othercharges: otherCharges,
@@ -96,18 +116,18 @@ export async function POST(request) {
 
         // Update the vehicle status to "Sold"
         prisma.addVehicle.update({
-          where: { id: parseInt(data.vehicleNo) },
+          where: { id: vehicleId },
           data: { status: "Sold" },
         }),
 
         // Ledger Entry 1: Credit sale amount to balance
         prisma.ledger.create({
           data: {
-            admin_id: parseInt(data.admin_id),
+            admin_id: adminId,
             debit: 0,
             credit: salePrice,
             balance: oldBalance + salePrice,
-            description: `Sale amount credited for vehicle ${data.vehicleNo}`,
+            description: `Sale amount credited for vehicle ${vehicleId}`,
             transaction_at: new Date(),
           },
         }),
@@ -115,23 +135,28 @@ export async function POST(request) {
         // Ledger Entry 2: Debit commission + other charges from balance
         prisma.ledger.create({
           data: {
-            admin_id: parseInt(data.admin_id),
+            admin_id: adminId,
             debit: totalExpenses,
             credit: 0,
             balance: newBalance,
-            description: `Expenses (Commission: ${commissionAmount}, Other: ${otherCharges}) for vehicle ${data.vehicleNo} - ${data.details || "No details"}`,
+            description: `Expenses (Commission: ${commissionAmount}, Other: ${otherCharges}) for vehicle ${vehicleId} - ${data.details || "No details"}`,
             transaction_at: new Date(),
           },
         }),
 
         // Update admin balance
         prisma.admin.update({
-          where: { id: parseInt(data.admin_id) },
+          where: { id: adminId },
           data: { balance: newBalance },
         }),
       ]);
-
-    console.log("Transaction successful:", { saleVehicle, updatedVehicle, newBalance });
+    console.log("Checkpoint 8 - Transaction successful:", {
+      saleVehicle,
+      updatedVehicle,
+      ledgerEntryCredit,
+      ledgerEntryDebit,
+      updatedAdmin,
+    });
 
     return NextResponse.json(
       {
@@ -147,95 +172,152 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Transaction error:", error.message, error.stack);
+    // Checkpoint 9: Handle transaction error
+    console.error("Checkpoint 9 - Transaction error:", {
+      message: error.message,
+      stack: error.stack,
+      data: JSON.stringify(data, null, 2),
+    });
     return NextResponse.json(
       {
         message: "Failed to save sale vehicle",
         error: true,
-        details: error.message,
+        details: error.message || "Unknown error occurred",
       },
       { status: 500 }
     );
+  } finally {
+    // Checkpoint 10: Ensure Prisma disconnect
+    console.log("Checkpoint 10 - Disconnecting Prisma...");
+    await prisma.$disconnect();
   }
 }
 
 export async function GET(request) {
   try {
-    // Fetch all sale vehicles with related AddVehicle data
+    // Checkpoint 1: Fetch sale vehicles
+    console.log("Checkpoint 1 - Fetching all sale vehicles...");
     const saleVehicles = await prisma.sale_Vehicle.findMany({
-      orderBy: { createdAt: 'desc' }, // Optional: latest first
+      orderBy: { createdAt: "desc" }, // Latest first
       include: {
         Admin: {
-          select: { username: true }, // Include admin username if needed
+          select: { username: true }, // Include admin username
+        },
+        vehicle: {
+          // Corrected relation name from AddVehicle to vehicle
+          select: {
+            id: true,
+            chassisNo: true,
+            maker: true,
+            year: true,
+            totalAmount_dollers: true,
+          },
         },
       },
     });
+    console.log("Checkpoint 1 - Sale vehicles fetched:", saleVehicles.length);
 
-    // Calculate cost price for each Sale_Vehicle
+    // Checkpoint 2: Calculate cost price for each Sale_Vehicle
+    console.log("Checkpoint 2 - Calculating cost prices for sale vehicles...");
     const saleVehiclesWithCostPrice = await Promise.all(
-      saleVehicles.map(async (saleVehicle) => {
-        const vehicleNo = saleVehicle.vehicleNo;
+      saleVehicles.map(async (saleVehicle, index) => {
+        // Checkpoint 2.1: Process each sale vehicle
+        console.log(
+          `Checkpoint 2.1 - Processing sale vehicle ${index + 1}/${saleVehicles.length}, ID: ${saleVehicle.id}, vehicleNo: ${saleVehicle.vehicleNo}`
+        );
 
-        // 1. Find the AddVehicle record for this vehicleNo to get vehicleId
-        const addVehicle = await prisma.addVehicle.findFirst({
-          where: { chassisNo: vehicleNo },
-          select: { id: true, totalAmount_dollers: true },
+        const vehicleId = saleVehicle.vehicleNo; // vehicleNo is the AddVehicle id
+
+        // Checkpoint 2.2: ContainerItemDetail aggregation
+        console.log(`Checkpoint 2.2 - Aggregating ContainerItemDetail for vehicle ID: ${vehicleId}`);
+        const containerItemsTotal = await prisma.containerItemDetail.aggregate({
+          where: { vehicleId: vehicleId },
+          _sum: { amount: true },
         });
+        const containerItemsAmount = containerItemsTotal._sum.amount || 0;
+        console.log("Checkpoint 2.2 - ContainerItemDetail total:", containerItemsTotal);
 
-        const vehicleId = addVehicle?.id;
+        // Checkpoint 2.3: AddVehicle totalAmount_dollers
+        const addVehicleTotal = saleVehicle.vehicle?.totalAmount_dollers || 0;
+        console.log("Checkpoint 2.3 - AddVehicle totalAmount_dollers:", addVehicleTotal);
 
-        // 2. ContainerItemDetail: Sum amount for this vehicle
-        const containerItemsTotal = vehicleId
-          ? await prisma.containerItemDetail.aggregate({
-              where: { vehicleId: vehicleId },
-              _sum: { amount: true },
-            })
-          : { _sum: { amount: 0 } };
-
-        // 3. AddVehicle: Get totalAmount_dollers
-        const addVehicleTotal = addVehicle?.totalAmount_dollers || 0;
-
-        // 4. Transport: Sum totaldollers for this vehicleNo
+        // Checkpoint 2.4: Transport aggregation
+        console.log(`Checkpoint 2.4 - Aggregating Transport for vehicleNo: ${vehicleId}`);
         const transportTotal = await prisma.transport.aggregate({
-          where: { vehicleNo: vehicleNo },
-          _sum: { totaldollers: true },
+          where: { vehicleNo: vehicleId },
+          _sum: { v_amount: true }, // Corrected field name from v_amount to totaldollers
         });
 
-        // 5. Inspection: Sum invoice_amount_dollers for this vehicleNo
+        const transportAmount = transportTotal._sum.v_amount || 0;
+        console.log("Checkpoint 2.4 - Transport total:", transportTotal);
+
+        // Checkpoint 2.5: Inspection aggregation
+        console.log(`Checkpoint 2.5 - Aggregating Inspection for vehicleNo: ${vehicleId}`);
         const inspectionTotal = await prisma.inspection.aggregate({
-          where: { vehicleNo: vehicleNo },
-          _sum: { invoice_amount_dollers: true },
+          where: { vehicleNo: vehicleId },
+          _sum: { vamount_doller: true },
         });
+        const inspectionAmount = inspectionTotal._sum.vamount_doller || 0;
+        console.log("Checkpoint 2.5 - Inspection total:", inspectionTotal);
 
-        // 6. PortCollect: Sum totalAmount for this vehicleNo (assuming USD)
+        // Checkpoint 2.6: PortCollect aggregation
+        console.log(`Checkpoint 2.6 - Aggregating PortCollect for vehicleNo: ${vehicleId}`);
         const portCollectTotal = await prisma.portCollect.aggregate({
-          where: { vehicleNo: vehicleNo },
-          _sum: { totalAmount: true },
+          where: { vehicleNo: vehicleId },
+          _sum: { vamount: true },
         });
+        const portCollectAmount = portCollectTotal._sum.vamount || 0;
+        console.log("Checkpoint 2.6 - PortCollect total:", portCollectTotal);
 
-        // 7. ShowRoom_Vehicle: Sum vtotalAmount for this vehicleNo (assuming USD)
+        // Checkpoint 2.7: ShowRoom_Vehicle aggregation
+        console.log(`Checkpoint 2.7 - Aggregating ShowRoom_Vehicle for vehicleNo: ${vehicleId}`);
         const showRoomVehicleTotal = await prisma.showRoom_Vehicle.aggregate({
-          where: { vehicleNo: vehicleNo },
+          where: { vehicleNo: vehicleId },
           _sum: { vtotalAmount: true },
         });
+        const showRoomVehicleAmount = showRoomVehicleTotal._sum.vtotalAmount || 0;
+        console.log("Checkpoint 2.7 - ShowRoom_Vehicle total:", showRoomVehicleTotal);
 
-        // Calculate total cost price for this vehicle
+        // Checkpoint 2.7: Sale_Vehicle aggregation
+        console.log(`Checkpoint 2.7 - Aggregating Sale_Vehicle for vehicleNo: ${vehicleId}`);
+        const showSaleTotal = await prisma.sale_Vehicle.aggregate({
+          where: { vehicleNo: vehicleId },
+          _sum: { totalAmount: true },
+        });
+        const showSaleAmount = showSaleTotal._sum.totalAmount || 0;
+        console.log("Checkpoint 2.7 - Sale_Vehicle total:", showSaleTotal);
+
+        // Checkpoint 2.8: Calculate cost price
         const costPrice =
-          (containerItemsTotal._sum.amount || 0) +
-          (addVehicleTotal || 0) +
-          (transportTotal._sum.totaldollers || 0) +
-          (inspectionTotal._sum.invoice_amount_dollers || 0) +
-          (portCollectTotal._sum.totalAmount || 0) +
-          (showRoomVehicleTotal._sum.vtotalAmount || 0);
+          containerItemsAmount +
+          addVehicleTotal +
+          transportAmount +
+          inspectionAmount +
+          portCollectAmount +
+          showRoomVehicleAmount +
+          showSaleAmount;
+        console.log(`Checkpoint 2.8 - Calculated cost price for vehicleNo ${vehicleId}:`, costPrice);
 
         return {
           ...saleVehicle,
           costPrice: parseFloat(costPrice.toFixed(2)), // Format to 2 decimal places
           salePrice: saleVehicle.sale_price, // Rename sale_price for clarity
+          costBreakdown: {
+            containerItemsAmount,
+            addVehicleTotal,
+            transportAmount,
+            inspectionAmount,
+            portCollectAmount,
+            showRoomVehicleAmount,
+            showSaleAmount,
+          },
         };
       })
     );
+    console.log("Checkpoint 2 - Cost prices calculated:", saleVehiclesWithCostPrice.length);
 
+    // Checkpoint 3: Return successful response
+    console.log("Checkpoint 3 - Returning successful response...");
     return NextResponse.json(
       {
         message: "Sale vehicles retrieved successfully with cost prices",
@@ -245,10 +327,22 @@ export async function GET(request) {
       { status: 200 }
     );
   } catch (error) {
-   
+    // Checkpoint 4: Handle error
+    console.error("Checkpoint 4 - Error in GET endpoint:", {
+      message: error.message,
+      stack: error.stack,
+    });
     return NextResponse.json(
-      { message: "Failed to fetch sale vehicles or calculate cost prices", error: true },
+      {
+        message: "Failed to fetch sale vehicles or calculate cost prices",
+        error: true,
+        details: error.message || "Unknown error occurred",
+      },
       { status: 500 }
     );
+  } finally {
+    // Checkpoint 5: Ensure Prisma disconnect
+    console.log("Checkpoint 5 - Disconnecting Prisma...");
+    await prisma.$disconnect();
   }
 }

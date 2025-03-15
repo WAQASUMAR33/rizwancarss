@@ -480,7 +480,7 @@ const VehiclesList = () => {
                             <Table size="small">
                               <TableHead>
                                 <TableRow sx={{ bgcolor: "#f5f5f5" }}>
-                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Freight</TableCell>
+                                  <TableCell align="left" sx={{ borderRight: "1px solid #e0e0e0", color: "#000", fontWeight: "bold" }}>Port Charges</TableCell>
                                 </TableRow>
                               </TableHead>
                               <TableBody>
@@ -584,7 +584,7 @@ const VehiclesList = () => {
                                 boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                               }}
                             >
-                              Container Item 1
+                              Cargo Charges
                             </Typography>
                             <TableContainer component={Paper}>
                               <Table size="small">

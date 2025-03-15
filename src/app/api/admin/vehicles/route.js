@@ -1,6 +1,6 @@
 // app/api/admin/vehicles/route.js
 import { NextResponse } from "next/server";
-import prisma from "../../../../utils/prisma";
+import prisma from "@/utils/prisma";
 
 export async function GET() {
   try {
@@ -52,16 +52,17 @@ export async function GET() {
         const [transport, inspection, portCollect, showroom, sale] =
           await Promise.all([
             prisma.transport.findFirst({
-              where: { vehicleNo: vehicle.id.toString() },
+              where: { vehicleNo: vehicle.id },
               select: {
                 amount: true,
                 tenPercentAdd: true,
                 totalamount: true,
                 totaldollers: true,
+                v_amount:true,
               },
             }),
             prisma.inspection.findFirst({
-              where: { vehicleNo: vehicle.id.toString() },
+              where: { vehicleNo: vehicle.id },
               select: {
                 invoice_amount: true,
                 invoice_tax: true,
@@ -71,7 +72,7 @@ export async function GET() {
               },
             }),
             prisma.portCollect.findFirst({
-              where: { vehicleNo: vehicle.chassisNo },
+              where: { vehicleNo: vehicle.id },
               select: {
                 freight_amount: true,
                 port_charges: true,
@@ -82,7 +83,7 @@ export async function GET() {
               },
             }),
             prisma.showRoom_Vehicle.findFirst({
-              where: { vehicleNo: vehicle.chassisNo },
+              where: { vehicleNo: vehicle.id },
               select: {
                 Transport_charges: true,
                 othercharges: true,
@@ -93,7 +94,7 @@ export async function GET() {
               },
             }),
             prisma.sale_Vehicle.findFirst({
-              where: { vehicleNo: vehicle.chassisNo },
+              where: { vehicleNo: vehicle.id },
               select: {
                 commission_amount: true,
                 othercharges: true,

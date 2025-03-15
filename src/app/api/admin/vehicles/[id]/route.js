@@ -78,16 +78,17 @@ export async function GET(request, { params }) {
     const [transport, inspection, portCollect, showroom, sale] =
       await Promise.all([
         prisma.transport.findFirst({
-          where: { vehicleNo: vehicle.id.toString() },
+          where: { vehicleNo: vehicle.id },
           select: {
             amount: true,
             tenPercentAdd: true,
             totalamount: true,
             totaldollers: true,
+            v_amount:true,
           },
         }),
         prisma.inspection.findFirst({
-          where: { vehicleNo: vehicle.id.toString() },
+          where: { vehicleNo: vehicle.id },
           select: {
             invoice_amount: true,
             invoice_tax: true,
@@ -97,7 +98,7 @@ export async function GET(request, { params }) {
           },
         }),
         prisma.portCollect.findFirst({
-          where: { vehicleNo: vehicle.id.toString() },
+          where: { vehicleNo: vehicle.id },
           select: {
             freight_amount: true,
             port_charges: true,
@@ -108,7 +109,7 @@ export async function GET(request, { params }) {
           },
         }),
         prisma.showRoom_Vehicle.findFirst({
-          where: { vehicleNo: vehicle.chassisNo },
+          where: { vehicleNo: vehicle.id },
           select: {
             Transport_charges: true,
             othercharges: true,
@@ -119,7 +120,7 @@ export async function GET(request, { params }) {
           },
         }),
         prisma.sale_Vehicle.findFirst({
-          where: { vehicleNo: vehicle.chassisNo },
+          where: { vehicleNo: vehicle.id },
           select: {
             commission_amount: true,
             othercharges: true,

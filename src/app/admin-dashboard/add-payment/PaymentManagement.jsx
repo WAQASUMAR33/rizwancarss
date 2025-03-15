@@ -141,10 +141,17 @@ export default function AddPaymentRequest() {
     setFetchingAccounts(true);
     try {
       const response = await fetch('/api/admin/bank-account', { method: 'GET' });
-      if (!response.ok) throw new Error('Failed to fetch bank accounts');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to fetch bank accounts');
+      }
       const data = await response.json();
-      setBankAccounts(data);
-      setShowModal(true);
+      if (data.status === true && data.data) {
+        setBankAccounts(data.data);
+        setShowModal(true);
+      } else {
+        throw new Error(data.message || 'No bank accounts found');
+      }
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -414,23 +421,21 @@ export default function AddPaymentRequest() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {filteredPaymentHistory.length > 0 ? (
-                        filteredPaymentHistory.map((payment) => (
-                          <TableRow
-                            key={payment.id}
-                            hover
-                            sx={{ "&:hover": { backgroundColor: theme.palette.action.hover } }}
-                          >
-                            <TableCell>{payment.id}</TableCell>
-                            <TableCell>{payment.transactionno}</TableCell>
-                            <TableCell>{(payment.amount || 0).toFixed(2)}</TableCell> {/* Fixed to 2 decimal places */}
-                            <TableCell>{payment.status}</TableCell>
-                            <TableCell>Payment</TableCell>
-                            <TableCell>{new Date(payment.created_at).toLocaleDateString()}</TableCell>
-                            <TableCell>{new Date(payment.updated_at).toLocaleDateString()}</TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
+                      {filteredPaymentHistory.length > 0 ? filteredPaymentHistory.map((payment) => (
+                        <TableRow
+                          key={payment.id}
+                          hover
+                          sx={{ "&:hover": { backgroundColor: theme.palette.action.hover } }}
+                        >
+                          <TableCell>{payment.id}</TableCell>
+                          <TableCell>{payment.transactionno}</TableCell>
+                          <TableCell>{(payment.amount || 0).toFixed(2)}</TableCell>
+                          <TableCell>{payment.status}</TableCell>
+                          <TableCell>Payment</TableCell>
+                          <TableCell>{new Date(payment.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>{new Date(payment.updated_at).toLocaleDateString()}</TableCell>
+                        </TableRow>
+                      )) : (
                         <TableRow>
                           <TableCell colSpan={7} align="center">
                             <Typography variant="body1">No payment history available</Typography>
@@ -446,7 +451,7 @@ export default function AddPaymentRequest() {
         </Grid>
       </Grid>
 
-      <Dialog open={showModal} onClose={() => setShowModal(false)} maxWidth="sm" fullWidth>
+      <Dialog open={showModal} onClose={() => setShowModal(false)} maxWidth="md" fullWidth>
         <DialogTitle>Bank Accounts</DialogTitle>
         <DialogContent>
           <Typography variant="body1" gutterBottom>
@@ -456,17 +461,33 @@ export default function AddPaymentRequest() {
             {bankAccounts.length > 0 ? (
               bankAccounts.map((account) => (
                 <Card key={account.id} sx={{ p: 2, borderRadius: theme.shape.borderRadius }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center">
-                    <Box>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
                       <Typography variant="h6" sx={{ fontWeight: theme.typography.fontWeightBold }}>
                         {account.bank_title}
                       </Typography>
-                      <Typography variant="body2">{account.account_title}</Typography>
-                    </Box>
-                    <Typography variant="h6" sx={{ fontFamily: 'monospace' }}>
-                      {account.account_no}
-                    </Typography>
-                  </Stack>
+                      <Typography variant="body2" color="text.secondary">
+                        Account Title: {account.account_title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Account No: {account.account_no}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Ban No: {account.banno || "N/A"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Swift Code: {account.swiftcode || "N/A"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Created At: {new Date(account.created_at).toLocaleDateString()}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Updated At: {new Date(account.updated_at).toLocaleDateString()}
+                      </Typography>
+                    </Grid>
+                  </Grid>
                 </Card>
               ))
             ) : (

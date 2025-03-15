@@ -190,6 +190,7 @@ model AddVehicle {
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
   containerItems       ContainerItemDetail[]
+  saleVehicles        Sale_Vehicle[]    @relation("VehicleSaleVehicles")
 }
 
 model VehicleImage {
@@ -214,7 +215,7 @@ model Transport {
   totaldollers  Float @default(0)
   v_amount      Float  @default(0)
   imagePath     String   @db.Text @default("")
-  vehicleNo     String
+  vehicleNo     Int      @default(0)
   admin_id      Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -224,7 +225,7 @@ model Transport {
 
 model Inspection {
   id                     Int      @id @default(autoincrement())
-  vehicleNo              String
+  vehicleNo              Int      @default(0)
   company                String
   date                   DateTime
   invoice_amount         Float    @default(0)
@@ -243,7 +244,7 @@ model Inspection {
 
 model PortCollect {
   id            Int      @id @default(autoincrement())
-  vehicleNo     String
+  vehicleNo     Int      @default(0)
   date          DateTime
   freight_amount Float  @default(0)
   port_charges  Float    @default(0)
@@ -262,7 +263,7 @@ model PortCollect {
 
 model ShowRoom_Vehicle {
   id              Int      @id @default(autoincrement())
-  vehicleNo       String
+  vehicleNo       Int      @default(0)
   date            DateTime
   Transport_charges Float  @default(0)
   othercharges    Float    @default(0)
@@ -280,7 +281,7 @@ model ShowRoom_Vehicle {
 
 model Sale_Vehicle {
   id              Int      @id @default(autoincrement())
-  vehicleNo       String
+  vehicleNo       Int       @default(0)
   date            DateTime
   commission_amount Float  @default(0)
   othercharges    Float    @default(0)
@@ -295,6 +296,7 @@ model Sale_Vehicle {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   Admin           Admin    @relation("AdminSaleVehicles", fields: [admin_id], references: [id], onDelete: Cascade)
+  vehicle     AddVehicle @relation("VehicleSaleVehicles", fields: [vehicleNo], references: [id], onDelete: Cascade)
   @@index([admin_id])
 }
 
@@ -438,9 +440,11 @@ model Expenses {
 
 model BankAccounts {
   id            Int      @id @default(autoincrement())
-  bank_title    String
-  account_title String
-  account_no    String
+  bank_title    String   @default("")
+  account_title String   @default("")
+  account_no    String   @default("")
+  banno         String   @default("")
+  swiftcode     String   @default("")
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
 }
