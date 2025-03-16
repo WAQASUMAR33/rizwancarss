@@ -80,8 +80,8 @@ export async function POST(request) {
     const ledgerEntry = await prisma.ledger.create({
       data: {
         admin_id: parsedAdminId,
-        debit: parsedAmount,
-        credit: 0.0,
+        debit: 0.0,
+        credit: parsedAmount,
         balance: newBalance,
         description: `Expense: ${expense_title}`,
         transaction_at: new Date(),

@@ -29,6 +29,7 @@ export async function GET(request) {
   }
 }
 
+
 export async function POST(request) {
   try {
     console.log('Received POST request to /api/admin/cus-ledger');
@@ -65,15 +66,16 @@ export async function POST(request) {
 
     console.log('Starting transaction...');
     const transactionStartTime = Date.now();
-    // Start a transaction to ensure atomicity
+    // Start a transaction to ensure atomicity for User, CusLedger, Admin, and Ledger updates
     const result = await prisma.$transaction(async (tx) => {
       console.log(`Time to start transaction: ${Date.now() - transactionStartTime}ms`);
 
-      // Fetch the user's current balance with minimal fields
+      // --- User and CusLedger Logic (Existing) ---
+      // Fetch the user's current balance
       const userFetchStart = Date.now();
       const user = await tx.user.findUnique({
         where: { id: parseInt(user_id) },
-        select: { id: true, balance: true }, // Fetch only necessary fields
+        select: { id: true, balance: true },
       });
       console.log(`Time to fetch user: ${Date.now() - userFetchStart}ms`);
 
@@ -81,29 +83,27 @@ export async function POST(request) {
         throw new Error('User not found');
       }
 
-      // Calculate the new balance based on the user's current balance
       const currentBalance = user.balance || 0.0;
       const balanceAdjustment = type === 'IN' ? transactionAmount : -transactionAmount;
-      const newBalance = currentBalance + balanceAdjustment;
+      const newUserBalance = currentBalance + balanceAdjustment;
 
-      // Validate sufficient balance for OUT transactions
-      if (type === 'OUT' && newBalance < 0) {
+      if (type === 'OUT' && newUserBalance < 0) {
         throw new Error('Insufficient balance for this transaction');
       }
 
-      // Create CusLedger entry with the calculated balance
+      // Create CusLedger entry
       const ledgerCreateStart = Date.now();
-      const ledgerEntry = await tx.cusLedger.create({
+      const cusLedgerEntry = await tx.cusLedger.create({
         data: {
           user_id: parseInt(user_id),
-          in_amount: type === 'IN' ? transactionAmount : 0.0, // Corrected field name
+          in_amount: type === 'IN' ? transactionAmount : 0.0,
           out_amount: type === 'OUT' ? transactionAmount : 0.0,
-          balance: newBalance, // Store the running balance
+          balance: newUserBalance,
           description,
           added_by: parseInt(added_by),
         },
       });
-      console.log(`Time to create ledger entry: ${Date.now() - ledgerCreateStart}ms`);
+      console.log(`Time to create CusLedger entry: ${Date.now() - ledgerCreateStart}ms`);
 
       // Update user balance
       const userUpdateStart = Date.now();
@@ -114,20 +114,76 @@ export async function POST(request) {
             increment: balanceAdjustment,
           },
         },
-        select: { id: true, balance: true }, // Fetch only necessary fields
+        select: { id: true, balance: true },
       });
       console.log(`Time to update user balance: ${Date.now() - userUpdateStart}ms`);
 
-      return { ledgerEntry, updatedUser };
+      // --- Admin and Ledger Logic (New) ---
+      // Fetch Admin balance for admin_id = 1
+      const adminFetchStart = Date.now();
+      const admin = await tx.admin.findUnique({
+        where: { id: 1 }, // Fixed admin_id = 1
+        select: { id: true, balance: true },
+      });
+      console.log(`Time to fetch admin: ${Date.now() - adminFetchStart}ms`);
+
+      if (!admin) {
+        throw new Error('Admin with ID 1 not found');
+      }
+
+      const currentAdminBalance = admin.balance || 0.0;
+      // Admin balance increases for OUT (money received), decreases for IN (money given)
+      const adminBalanceAdjustment = type === 'OUT' ? transactionAmount : -transactionAmount;
+      const newAdminBalance = currentAdminBalance + adminBalanceAdjustment;
+
+      if (type === 'IN' && newAdminBalance < 0) {
+        throw new Error('Insufficient admin balance for this transaction');
+      }
+
+      // Update Admin balance
+      const adminUpdateStart = Date.now();
+      const updatedAdmin = await tx.admin.update({
+        where: { id: 1 },
+        data: {
+          balance: {
+            increment: adminBalanceAdjustment,
+          },
+        },
+        select: { id: true, balance: true },
+      });
+      console.log(`Time to update admin balance: ${Date.now() - adminUpdateStart}ms`);
+
+      // Create Ledger entry for admin
+      const adminLedgerCreateStart = Date.now();
+      const adminLedgerEntry = await tx.ledger.create({
+        data: {
+          admin_id: 1, // Fixed admin_id = 1
+          debit: type === 'IN' ? transactionAmount : 0.0,  // IN is debit for admin (money out)
+          credit: type === 'OUT' ? transactionAmount : 0.0, // OUT is credit for admin (money in)
+          balance: newAdminBalance,
+          description: `Transaction for user ${user_id}: ${description}`,
+        },
+      });
+      console.log(`Time to create admin Ledger entry: ${Date.now() - adminLedgerCreateStart}ms`);
+
+      return {
+        cusLedgerEntry,
+        updatedUser,
+        adminLedgerEntry,
+        updatedAdmin,
+      };
     });
 
     console.log(`Total transaction time: ${Date.now() - transactionStartTime}ms`);
 
     return NextResponse.json(
       {
-        message: 'Transaction recorded and balance updated successfully',
+        message: 'Transaction recorded and balances updated successfully',
         status: true,
-        data: { ledger: result.ledgerEntry, user: result.updatedUser },
+        data: {
+          customer: { ledger: result.cusLedgerEntry, user: result.updatedUser },
+          admin: { ledger: result.adminLedgerEntry, admin: result.updatedAdmin },
+        },
       },
       { status: 201 }
     );

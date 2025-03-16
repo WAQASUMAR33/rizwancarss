@@ -29,7 +29,7 @@ export async function POST(request) {
       surrender_fee = 0,
       bl_fee = 0,
       radiation_fee = 0,
-      booking_service_charges =0,
+      booking_service_charges = 0,
       totalAmount1 = 0,
       totalAmount1_dollars = 0,
       freight_amount = 0,
@@ -38,14 +38,15 @@ export async function POST(request) {
       net_total_amount_dollars = 0,
       imagePath,
       added_by,
-      admin_id,
+      admin_id, // Ignored since we're hardcoding admin_id to 1
       createdAt,
       updatedAt,
       containerDetails,
     } = data;
 
     // Validation
-    if (!bookingNo || !volume || !containerDetails || containerDetails.length !== volume) {
+    if (!bookingNo || !volume || !containerDetails || containerDetails.length !== parseInt(volume)) {
+      console.log("Validation failed: Missing or invalid required fields");
       return NextResponse.json(
         { error: "Missing or invalid required fields (bookingNo, volume, containerDetails)", status: false },
         { status: 400 }
@@ -54,6 +55,7 @@ export async function POST(request) {
 
     for (const container of containerDetails) {
       if (!container.containerItemDetails || container.containerItemDetails.length === 0) {
+        console.log("Validation failed: Missing containerItemDetails");
         return NextResponse.json(
           { error: "Each ContainerDetail must include at least one ContainerItemDetail", status: false },
           { status: 400 }
@@ -61,6 +63,7 @@ export async function POST(request) {
       }
       for (const item of container.containerItemDetails) {
         if (!item.vehicleId) {
+          console.log("Validation failed: Missing vehicleId in containerItemDetails");
           return NextResponse.json(
             { error: "Each ContainerItemDetail must include a vehicleId", status: false },
             { status: 400 }
@@ -70,10 +73,12 @@ export async function POST(request) {
     }
 
     // Check for duplicate bookingNo
+    console.log("Checking for existing booking with bookingNo:", bookingNo);
     const existingBooking = await prisma.containerBooking.findUnique({
       where: { bookingNo },
     });
     if (existingBooking) {
+      console.log(`Duplicate bookingNo detected: ${bookingNo}`);
       return NextResponse.json(
         { error: `Booking number '${bookingNo}' already exists`, status: false },
         { status: 409 }
@@ -82,50 +87,84 @@ export async function POST(request) {
 
     // Fetch vehicle data
     const vehicleIds = containerDetails.flatMap((container) =>
-      container.containerItemDetails.map((item) => item.vehicleId)
+      container.containerItemDetails.map((item) => parseInt(item.vehicleId))
     );
     console.log("Fetching vehicles with IDs:", vehicleIds);
     const vehicleData = await prisma.addVehicle.findMany({
       where: { id: { in: vehicleIds } },
-      select: { id: true, admin_id: true },
+      select: { id: true, admin_id: true, status: true },
     });
     console.log("Fetched vehicle data:", JSON.stringify(vehicleData, null, 2));
 
     const foundVehicleIds = vehicleData.map((v) => v.id);
     const missingVehicleIds = vehicleIds.filter((id) => !foundVehicleIds.includes(id));
     if (missingVehicleIds.length > 0) {
+      console.log("Vehicle(s) not found:", missingVehicleIds);
       return NextResponse.json(
         { error: `Vehicle(s) not found: ${missingVehicleIds.join(", ")}`, status: false },
         { status: 404 }
       );
     }
 
-    // Map vehicle IDs to admin_ids
-    const vehicleAdminMap = vehicleData.reduce((map, vehicle) => {
-      map[vehicle.id] = vehicle.admin_id;
-      return map;
-    }, {});
+    // Temporarily remove the vehicle status check for debugging
+    // const invalidVehicles = vehicleData.filter((v) => {
+    //   const status = v.status?.trim().toLowerCase();
+    //   return status !== "transport";
+    // });
+    // if (invalidVehicles.length > 0) {
+    //   console.log("Invalid vehicle statuses:", invalidVehicles);
+    //   return NextResponse.json(
+    //     { error: `One or more vehicles are not in 'Transport' status: ${invalidVehicles.map(v => v.id).join(", ")}`, status: false },
+    //     { status: 400 }
+    //   );
+    // }
 
-    // Fetch admin balances
-    const uniqueAdminIds = [...new Set([...Object.values(vehicleAdminMap), admin_id].filter(Boolean))];
-    console.log("Fetching admins with IDs:", uniqueAdminIds);
-    const adminData = await prisma.admin.findMany({
-      where: { id: { in: uniqueAdminIds } },
-      select: { id: true, balance: true },
+    // Fetch admin balances (hardcode admin_id to 1 for balance updates and ledger)
+    const targetAdminId = 1; // Hardcode admin_id to 1
+    console.log("Fetching admin with ID:", targetAdminId);
+    const adminData = await prisma.admin.findUnique({
+      where: { id: targetAdminId },
+      select: { balance: true },
     });
     console.log("Fetched admin data:", JSON.stringify(adminData, null, 2));
 
-    const adminBalanceMap = adminData.reduce((map, admin) => {
-      map[admin.id] = admin.balance;
-      return map;
-    }, {});
-    const missingAdmins = uniqueAdminIds.filter((id) => !adminBalanceMap[id] && adminBalanceMap[id] !== 0);
-    if (missingAdmins.length > 0) {
+    if (!adminData) {
+      console.log("Admin not found for ID:", targetAdminId);
       return NextResponse.json(
-        { error: `Admin(s) not found: ${missingAdmins.join(", ")}`, status: false },
+        { error: `Admin not found for ID ${targetAdminId}`, status: false },
         { status: 404 }
       );
     }
+
+    const currentBalance = adminData.balance;
+    console.log("Current admin balance:", currentBalance);
+
+    // Calculate total transaction amount based on freightTerm
+    let totalDebit = 0;
+    let totalCredit = 0;
+    if (freightTerm.toLowerCase() === "pre paid") {
+      totalDebit = parseFloat(net_total_amount_dollars) || 0;
+    } else if (freightTerm.toLowerCase() === "collect") {
+      totalCredit = parseFloat(totalAmount1_dollars) || 0;
+    } else {
+      console.log("Invalid freightTerm:", freightTerm);
+      return NextResponse.json(
+        { error: "Invalid freightTerm value. Must be 'pre paid' or 'collect'", status: false },
+        { status: 400 }
+      );
+    }
+
+    const totalTransactionAmount = totalDebit - totalCredit; // Net amount to deduct
+    const newBalance = currentBalance - totalTransactionAmount;
+
+    // Check for sufficient balance
+    // if (newBalance < 0) {
+    //   console.log("Insufficient balance:", { currentBalance, totalTransactionAmount });
+    //   return NextResponse.json(
+    //     { error: `Insufficient balance for admin ${targetAdminId}. Current: ${currentBalance}, Required: ${totalTransactionAmount}`, status: false },
+    //     { status: 400 }
+    //   );
+    // }
 
     // Prepare Prisma operations
     const operations = [];
@@ -148,7 +187,7 @@ export async function POST(request) {
           cargoMode,
           placeOfIssue,
           freightTerm,
-          booking_service_charges,
+          booking_service_charges: parseFloat(booking_service_charges) || 0,
           shipperName,
           consignee,
           descriptionOfGoods: descriptionOfGoods || "",
@@ -165,9 +204,9 @@ export async function POST(request) {
           net_total_amount_dollars: parseFloat(net_total_amount_dollars) || 0,
           imagePath: imagePath || "",
           added_by: parseInt(added_by) || 0,
-          admin_id: parseInt(admin_id) || 0,
-          createdAt: new Date(createdAt),
-          updatedAt: new Date(updatedAt),
+          admin_id: targetAdminId, // Hardcode admin_id to 1
+          createdAt: createdAt ? new Date(createdAt) : new Date(),
+          updatedAt: updatedAt ? new Date(updatedAt) : new Date(),
           containerDetails: {
             create: containerDetails.map((container) => ({
               consigneeName: container.consigneeName,
@@ -177,7 +216,7 @@ export async function POST(request) {
               note: container.note || "",
               imagePath: container.imagePath || "",
               added_by: parseInt(container.added_by) || 0,
-              admin_id: parseInt(container.admin_id) || 0,
+              admin_id: targetAdminId, // Hardcode admin_id to 1
             })),
           },
         },
@@ -200,7 +239,7 @@ export async function POST(request) {
               vehicleId: parseInt(item.vehicleId),
               containerDetailId: null, // Updated later
               added_by: parseInt(added_by) || 0,
-              admin_id: vehicleAdminMap[item.vehicleId] || 0,
+              admin_id: targetAdminId, // Hardcode admin_id to 1
               createdAt: new Date(),
               updatedAt: new Date(),
             },
@@ -215,35 +254,30 @@ export async function POST(request) {
       });
     });
 
-    // Admin balance updates
-    const adminUpdates = {};
-    containerDetails.forEach((container) => {
-      container.containerItemDetails.forEach((item) => {
-        const vehicleAdminId = vehicleAdminMap[item.vehicleId];
-        if (!adminUpdates[vehicleAdminId]) {
-          adminUpdates[vehicleAdminId] = { totalDebit: 0, totalCredit: 0, vehicleCount: 0 };
-        }
-        adminUpdates[vehicleAdminId].vehicleCount += 1;
-        if (freightTerm.toLowerCase() === "pre paid") {
-          adminUpdates[vehicleAdminId].totalDebit += parseFloat(net_total_amount_dollars) || 0;
-        } else if (freightTerm.toLowerCase() === "collect") {
-          adminUpdates[vehicleAdminId].totalCredit += parseFloat(totalAmount1_dollars) || 0;
-        }
-      });
-    });
+    // Update admin balance for hardcoded admin_id 1
+    operations.push(
+      prisma.admin.update({
+        where: { id: targetAdminId },
+        data: { balance: newBalance },
+      })
+    );
 
-    for (const [adminId, { totalDebit, totalCredit }] of Object.entries(adminUpdates)) {
-      const currentBalance = adminBalanceMap[adminId] || 0;
-      const newBalance = currentBalance - totalDebit + totalCredit;
-
-      operations.push(
-        prisma.admin.update({
-          where: { id: parseInt(adminId) },
-          data: { balance: newBalance },
-        })
-      );
-    }
-
+    // Create Ledger entry for deduction
+    operations.push(
+      prisma.ledger.create({
+        data: {
+          admin_id: targetAdminId,
+          debit: totalCredit, // Amount deducted
+          credit: totalDebit, // Amount credited
+          balance: newBalance, // New balance after transaction
+          description: `Cargo booking for bookingNo: ${bookingNo} - Debit: ${totalDebit}, Credit: ${totalCredit}`,
+          transaction_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      })
+    );
+    
     // Execute transaction
     console.log("Executing transaction with operations:", operations.length);
     const results = await prisma.$transaction(operations, {
@@ -255,7 +289,7 @@ export async function POST(request) {
     // Update ContainerItemDetail with containerDetailId
     const createdBooking = results[0];
     const containerDetailIds = createdBooking.containerDetails.map((cd) => cd.id);
-    let operationIndex = 1;
+    let operationIndex = 1; // Start after ContainerBooking creation
     for (let i = 0; i < containerDetails.length; i++) {
       const container = containerDetails[i];
       for (let j = 0; j < container.containerItemDetails.length; j++) {
@@ -279,7 +313,7 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
-
+    
     return NextResponse.json(
       {
         error: "Internal server error",

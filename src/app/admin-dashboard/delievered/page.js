@@ -202,9 +202,9 @@ const ShowroomVehicleRecords = () => {
         <Stack spacing={theme.spacing(2)}>
           {/* Title and Filter in a Single Row */}
           <Stack
-            direction={{ xs: "column", sm: "row" }} // Stack vertically on small screens, horizontally on larger screens
+            direction={{ xs: "column", sm: "row" }}
             spacing={theme.spacing(2)}
-            alignItems={{ xs: "stretch", sm: "center" }} // Align items to stretch on small screens, center on larger screens
+            alignItems={{ xs: "stretch", sm: "center" }}
             justifyContent="space-between"
             sx={{ mb: theme.spacing(2) }}
           >
@@ -224,8 +224,8 @@ const ShowroomVehicleRecords = () => {
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               sx={{
-                width: { xs: "100%", sm: "auto" }, // Full width on small screens, auto on larger screens
-                maxWidth: { sm: 400 }, // Limit width on larger screens
+                width: { xs: "100%", sm: "auto" },
+                maxWidth: { sm: 400 },
                 flexShrink: 0,
               }}
             />
@@ -255,7 +255,7 @@ const ShowroomVehicleRecords = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>ID</TableCell>
-                  <TableCell>Chassis No</TableCell>
+                  <TableCell>Vehicle No</TableCell>
                   <TableCell>Date</TableCell>
                   <TableCell>Total Amount</TableCell>
                   <TableCell>Actions</TableCell>
@@ -364,6 +364,18 @@ const ShowroomVehicleRecords = () => {
                 </Grid>
                 <Grid item xs={4}>
                   <FieldCard
+                    label="Created At"
+                    value={new Date(selectedRecord.createdAt).toLocaleString()}
+                  />
+                </Grid>
+                <Grid item xs={4}>
+                  <FieldCard
+                    label="Updated At"
+                    value={new Date(selectedRecord.updatedAt).toLocaleString()}
+                  />
+                </Grid>
+                <Grid item xs={4}>
+                  <FieldCard
                     label="Image"
                     value={
                       selectedRecord.imagePath
@@ -388,11 +400,11 @@ const ShowroomVehicleRecords = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>ID</TableCell>
-                      <TableCell>Chassis No</TableCell>
+                      <TableCell>Vehicle No</TableCell>
                       <TableCell>Date</TableCell>
                       <TableCell>Repair Charges</TableCell>
-                      <TableCell>vAmount</TableCell>
-                      <TableCell>vTotal Amount</TableCell>
+                      <TableCell>V Amount</TableCell>
+                      <TableCell>V Total Amount</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

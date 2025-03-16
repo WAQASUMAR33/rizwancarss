@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import prisma from '../../../../utils/prisma';
+import prisma from '@/utils/prisma';
 
 export async function POST(request) {
   console.log("POST request received at /api/admin/invoice-management");
@@ -117,7 +117,7 @@ export async function POST(request) {
         if (body.status === "PAID") {
           console.log("Processing PAID status");
           const admin = await tx.admin.findUnique({
-            where: { id: addedBy },
+            where: { id: 1 },
             select: { balance: true },
           });
           if (!admin) throw new Error(`Admin with ID ${addedBy} not found`);
@@ -134,8 +134,8 @@ export async function POST(request) {
             data: {
               admin_id: addedBy,
               debit: invoiceAmount,
-              credit: 0,
-              balance: newBalance,
+              credit: newBalance,
+              balance: 0.0,
               description: `Payment for Invoice #${invoice.number}`,
               transaction_at: new Date(),
             },
@@ -143,7 +143,7 @@ export async function POST(request) {
           console.log("Ledger entry created:", ledgerEntry);
 
           await tx.admin.update({
-            where: { id: addedBy },
+            where: { id: 1 },
             data: { balance: newBalance },
           });
           console.log(`Admin balance updated to: ${newBalance}`);

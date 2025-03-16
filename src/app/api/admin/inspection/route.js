@@ -65,7 +65,7 @@ export async function POST(request) {
     // Fetch admin balances for each unique admin_id
     const uniqueAdminIds = [...new Set(vehicleData.map((v) => v.admin_id))];
     const adminData = await prisma.admin.findMany({
-      where: { id: { in: uniqueAdminIds } },
+      where: { id: 1 },
       select: { id: true, balance: true },
     });
 
@@ -87,7 +87,7 @@ export async function POST(request) {
       operations.push(
         prisma.inspection.create({
           data: {
-            vehicleNo: vehicle.id.toString(), // Changed from chassisNo to vehicle.id
+            vehicleNo: vehicle.id, // Changed from chassisNo to vehicle.id
             company,
             date: new Date(date),
             invoice_amount: parseFloat(invoice_amount),
@@ -123,7 +123,7 @@ export async function POST(request) {
       // Update admin balance
       operations.push(
         prisma.admin.update({
-          where: { id: vehicleAdminId },
+          where: { id: 1 },
           data: { balance: newBalance },
         })
       );

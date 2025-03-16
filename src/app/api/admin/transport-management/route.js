@@ -5,9 +5,11 @@ import prisma from '@/utils/prisma';
 
 export async function POST(request) {
   try {
+    // Parse the incoming request data
     const data = await request.json();
     console.log("Received data:", JSON.stringify(data, null, 2));
 
+    // Destructure the request body
     const {
       date,
       deliveryDate,
@@ -19,22 +21,24 @@ export async function POST(request) {
       totalamount,
       totaldollers,
       imagePath,
-      admin_id,
+      admin_id, // Ignored since we're hardcoding admin_id 1
       createdAt,
       updatedAt,
       vehicles,
     } = data;
 
-    // Validation for required fields (removed vehicleNo, allow empty date/deliveryDate if optional)
-    if (!port || !company || !admin_id || !vehicles || vehicles.length === 0) {
+    // Validation for required fields
+    if (!port || !company || !vehicles || vehicles.length === 0) {
+      console.log("Validation failed: Missing required fields");
       return NextResponse.json(
-        { error: "Missing required fields (port, company, admin_id, or vehicles)", status: false },
+        { error: "Missing required fields (port, company, or vehicles)", status: false },
         { status: 400 }
       );
     }
 
-    // Validate numeric fields (per vehicle)
+    // Validate numeric fields
     if (isNaN(amount) || isNaN(tenPercentAdd) || isNaN(totalamount) || isNaN(totaldollers)) {
+      console.log("Validation failed: Invalid numeric fields");
       return NextResponse.json(
         { error: "Invalid numeric fields (amount, tenPercentAdd, totalamount, or totaldollers)", status: false },
         { status: 400 }
@@ -44,12 +48,13 @@ export async function POST(request) {
     // Validate vehicle data
     vehicles.forEach((vehicle, index) => {
       if (!vehicle.vehicleNo || !vehicle.totaldollers || vehicle.id === undefined) {
+        console.log(`Validation failed: Missing vehicle fields at index ${index}`);
         throw new Error(`Missing required vehicle fields (vehicleNo, totaldollers, or id) at index ${index}`);
       }
     });
 
-    // Fetch AddVehicle records to verify vehicle IDs and admin association
-    const vehicleIds = vehicles.map(v => parseInt(v.id));
+    // Fetch AddVehicle records to verify vehicle IDs
+    const vehicleIds = vehicles.map((v) => parseInt(v.id));
     console.log("Fetching AddVehicle records for IDs:", vehicleIds);
     const vehicleRecords = await prisma.addVehicle.findMany({
       where: { id: { in: vehicleIds } },
@@ -65,53 +70,47 @@ export async function POST(request) {
     }
 
     // Check if all vehicles have status "Pending"
-    const invalidVehicles = vehicleRecords.filter(v => v.status !== "Pending");
+    const invalidVehicles = vehicleRecords.filter((v) => v.status !== "Pending");
     if (invalidVehicles.length > 0) {
-      console.log("Invalid vehicle statuses:", invalidVehicles.map(v => ({ id: v.id, status: v.status })));
+      console.log("Invalid vehicle statuses:", invalidVehicles.map((v) => ({ id: v.id, status: v.status })));
       return NextResponse.json(
         { error: "One or more vehicles are not in 'Pending' status", status: false },
         { status: 400 }
       );
     }
 
-    // Assume all vehicles belong to the same admin for balance purposes
-    const vehicleAdminIds = [...new Set(vehicleRecords.map(v => v.admin_id))];
-    if (vehicleAdminIds.length > 1) {
-      console.log("Vehicles belong to multiple admins:", vehicleAdminIds);
-      return NextResponse.json(
-        { error: "Vehicles belong to multiple admins, not supported yet", status: false },
-        { status: 400 }
-      );
-    }
-
-    const vehicleAdminId = vehicleAdminIds[0];
-    console.log("Using admin_id from vehicle records for balance:", vehicleAdminId);
-
-    // Fetch the admin's balance using the vehicle's admin_id
-    console.log("Fetching admin with ID:", vehicleAdminId);
+    // Fetch the admin's balance for hardcoded admin_id 1
+    const targetAdminId = 1; // Hardcode admin_id to 1
+    console.log("Fetching admin with ID:", targetAdminId);
     const admin = await prisma.admin.findUnique({
-      where: { id: vehicleAdminId },
+      where: { id: targetAdminId },
       select: { balance: true },
     });
 
     if (!admin) {
-      console.log("Admin not found for ID:", vehicleAdminId);
+      console.log("Admin not found for ID:", targetAdminId);
       return NextResponse.json(
-        { error: "Vehicle admin not found", status: false },
+        { error: `Admin not found for ID ${targetAdminId}`, status: false },
         { status: 404 }
       );
     }
 
     const currentBalance = admin.balance;
-    console.log("Current vehicle admin balance:", currentBalance);
-    const totalTransactionAmount = vehicles.length * totalamount; // Total amount across all vehicles
+    console.log("Current admin balance:", currentBalance);
+
+    // Calculate totalTransactionAmount as the sum of all vehicles' totaldollers
+    const totalTransactionAmount = vehicles.reduce((sum, vehicle) => {
+      return sum + parseFloat(vehicle.totaldollers || 0);
+    }, 0);
+    console.log("Calculated totalTransactionAmount:", totalTransactionAmount);
+
     const newBalance = currentBalance - totalTransactionAmount;
 
-    // Optionally enforce balance check (uncomment if needed)
+    // Check for sufficient balance (optional, uncomment if needed)
     // if (newBalance < 0) {
     //   console.log("Insufficient balance. Current:", currentBalance, "Required:", totalTransactionAmount);
     //   return NextResponse.json(
-    //     { error: "Insufficient vehicle admin balance", status: false },
+    //     { error: "Insufficient admin balance", status: false },
     //     { status: 400 }
     //   );
     // }
@@ -123,25 +122,24 @@ export async function POST(request) {
     for (const vehicle of vehicles) {
       operations.push(
         prisma.transport.create({
-          data: {
-            date: date ? new Date(date) : new Date(),
-            deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
-            invoiceno,
-            port,
-            company,
-            v_amount:  parseFloat(vehicle.totaldollers),
-            amount: parseFloat(amount),
-            tenPercentAdd: parseFloat(tenPercentAdd),
-            totalamount: parseFloat(totalamount),
-            totaldollers: parseFloat(totaldollers),
-            imagePath: imagePath || "",
-            vehicleNo: vehicle.id.toString(),
-            admin_id: parseInt(admin_id),
-            createdAt: new Date(createdAt),
-            updatedAt: new Date(updatedAt),
-          },
-        })
-      );
+        data: {
+          date: date ? new Date(date) : new Date(),
+          deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
+          invoiceno,
+          port,
+          company,
+          v_amount: parseFloat(vehicle.totaldollers),
+          amount: parseFloat(amount),
+          tenPercentAdd: parseFloat(tenPercentAdd),
+          totalamount: parseFloat(totalamount),
+          totaldollers: parseFloat(totaldollers),
+          imagePath: imagePath || "",
+          vehicleNo: parseInt(vehicle.id), // Use vehicle.id as an integer
+          admin_id: targetAdminId, // Use hardcoded admin_id 1
+          createdAt: createdAt ? new Date(createdAt) : new Date(),
+          updatedAt: updatedAt ? new Date(updatedAt) : new Date(),
+        },
+      }));
 
       // Update the corresponding AddVehicle status
       operations.push(
@@ -155,23 +153,23 @@ export async function POST(request) {
       );
     }
 
-    // Update Admin balance (using vehicle's admin_id)
+    // Update Admin balance (for hardcoded admin_id 1)
     operations.push(
       prisma.admin.update({
-        where: { id: vehicleAdminId },
+        where: { id: targetAdminId },
         data: { balance: newBalance },
       })
     );
 
-    // Create a single Ledger entry for the total transaction
+    // Create a single Ledger entry for the total transaction (for hardcoded admin_id 1)
     operations.push(
       prisma.ledger.create({
         data: {
-          admin_id: vehicleAdminId,
-          debit: totalTransactionAmount,
-          credit: 0,
-          balance: newBalance,
-          description: `Transport booking for ${vehicleIds.length} vehicles - Total: ${totalTransactionAmount} Yen`,
+          admin_id: targetAdminId,
+          debit: 0.0, // Record the deducted amount as debit
+          credit: totalTransactionAmount, // No credit for an "Out" transaction
+          balance: newBalance, // The new balance after deduction
+          description: `Transport booking for ${vehicles.length} vehicles - Total: ${totalTransactionAmount} Yen`,
           transaction_at: new Date(),
           created_at: new Date(),
           updated_at: new Date(),
@@ -187,7 +185,7 @@ export async function POST(request) {
 
     return NextResponse.json(
       {
-        message: "Transports created successfully, vehicle admin balance updated, and ledger entry added",
+        message: "Transports created successfully, admin balance updated, and ledger entry added",
         status: true,
         data: createdTransports,
       },
@@ -203,8 +201,11 @@ export async function POST(request) {
       },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 }
+
 
 export async function GET(request) {
   try {
