@@ -412,7 +412,7 @@ export default function NewBookingForm() {
   }
 
   return (
-    <Box sx={{ p: 2, bgcolor: "#f1f6f9" }}>
+    <Box sx={{ p: 2, bgcolor: "#FFFFFF" }}>
       <Typography variant="h4" gutterBottom>
         New Vehicle Booking
       </Typography>
