@@ -18,10 +18,6 @@ import {
   IconButton,
   Box,
   Typography,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
 } from "@mui/material";
 import { Close as CloseIcon, Upload as UploadIcon } from "@mui/icons-material";
 
@@ -34,9 +30,9 @@ const InvoicesList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [editedStatus, setEditedStatus] = useState("");
   const [newImage, setNewImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [isImageUploading, setIsImageUploading] = useState(false); // Loading state for image upload
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -93,10 +89,6 @@ const InvoicesList = () => {
     currentPage * itemsPerPage
   );
 
-  const handleStatusChange = (value) => {
-    setEditedStatus(value);
-  };
-
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -107,18 +99,31 @@ const InvoicesList = () => {
   };
 
   const uploadImageToServer = async (base64Image) => {
+    console.log("Attempting to upload image to:", process.env.NEXT_PUBLIC_IMAGE_UPLOAD_API);
+    console.log("Base64 Image Length:", base64Image.length);
+
     try {
       const response = await fetch(process.env.NEXT_PUBLIC_IMAGE_UPLOAD_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64Image }),
       });
+      console.log("Server response status:", response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("Server error response:", errorText);
+        throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
+      }
+
       const data = await response.json();
-      if (!response.ok || !data.image_url) throw new Error("Failed to upload image");
+      console.log("Server response data:", data);
+
+      if (!data.image_url) throw new Error("No image URL returned from server");
       return `${process.env.NEXT_PUBLIC_IMAGE_UPLOAD_PATH}/${data.image_url}`;
     } catch (error) {
-      console.error("Image upload error:", error);
-      throw new Error("Failed to upload image");
+      console.error("Image upload error details:", error);
+      throw new Error(`Image upload failed: ${error.message}`);
     }
   };
 
@@ -134,6 +139,8 @@ const InvoicesList = () => {
     if (!selectedInvoice || !newImage) return;
 
     try {
+      setIsImageUploading(true); // Start loading state
+
       // Convert the new image to base64 and upload it
       const base64Image = await convertToBase64(newImage);
       const imagePath = await uploadImageToServer(base64Image);
@@ -148,7 +155,9 @@ const InvoicesList = () => {
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to update image: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error("Update response error:", errorText);
+        throw new Error(`Failed to update image: ${response.statusText}, ${errorText}`);
       }
 
       const updatedInvoice = await response.json();
@@ -168,37 +177,8 @@ const InvoicesList = () => {
     } catch (err) {
       console.error("Error updating image:", err);
       alert(`Failed to update image: ${err.message}`);
-    }
-  };
-
-  const saveStatus = async () => {
-    if (!selectedInvoice || editedStatus === selectedInvoice.status) return;
-
-    try {
-      const response = await fetch(`/api/admin/invoice-management/${selectedInvoice.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: editedStatus }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to update status: ${response.statusText}`);
-      }
-
-      const updatedInvoice = await response.json();
-      console.log("Updated invoice:", updatedInvoice);
-
-      setInvoices((prev) =>
-        prev.map((inv) => (inv.id === selectedInvoice.id ? { ...inv, status: editedStatus } : inv))
-      );
-      setFilteredInvoices((prev) =>
-        prev.map((inv) => (inv.id === selectedInvoice.id ? { ...inv, status: editedStatus } : inv))
-      );
-      setSelectedInvoice((prev) => ({ ...prev, status: editedStatus }));
-      alert("Status updated successfully!");
-    } catch (err) {
-      console.error("Error updating status:", err);
-      alert(`Failed to update status: ${err.message}`);
+    } finally {
+      setIsImageUploading(false); // Stop loading state
     }
   };
 
@@ -277,7 +257,6 @@ const InvoicesList = () => {
                       size="small"
                       onClick={() => {
                         setSelectedInvoice(invoice);
-                        setEditedStatus(invoice.status);
                         setNewImage(null);
                         setImagePreview(null);
                       }}
@@ -385,72 +364,58 @@ const InvoicesList = () => {
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Invoice Image</Typography>
-                  <Box>
-                    {selectedInvoice.imagePath ? (
-                      <a href={selectedInvoice.imagePath} download={`invoice-${selectedInvoice.id}.png`}>
-                        <img
-                          src={selectedInvoice.imagePath}
-                          alt="Invoice"
-                          style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
-                        />
-                        <Typography variant="caption" color="primary" sx={{ mt: 1, display: "block" }}>
-                          Click to download
-                        </Typography>
-                      </a>
-                    ) : (
-                      <Typography variant="body1">No image available</Typography>
-                    )}
-                    <Box mt={2}>
-                      <Button
-                        variant="contained"
-                        component="label"
-                        startIcon={<UploadIcon />}
-                        sx={{ mr: 1 }}
-                      >
-                        Upload New Image
-                        <input
-                          type="file"
-                          hidden
-                          accept="image/*"
-                          onChange={handleImageChange}
-                        />
-                      </Button>
-                      {imagePreview && (
-                        <Box mt={1}>
-                          <img
-                            src={imagePreview}
-                            alt="New Invoice Preview"
-                            style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4 }}
-                          />
-                          <Button
-                            variant="contained"
-                            color="success"
-                            onClick={saveImage}
-                            sx={{ mt: 1 }}
-                            disabled={!newImage}
-                          >
-                            Save Image
-                          </Button>
-                        </Box>
-                      )}
-                    </Box>
-                  </Box>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2, display: "flex", alignItems: "center", gap: 2 }}>
-                  <FormControl fullWidth variant="outlined">
-                    <InputLabel>Status</InputLabel>
-                    <Select
-                      value={editedStatus}
-                      onChange={(e) => handleStatusChange(e.target.value)}
-                      label="Status"
+                  {selectedInvoice.imagePath ? (
+                    <a href={selectedInvoice.imagePath} download={`invoice-${selectedInvoice.id}.png`}>
+                      <img
+                        src={selectedInvoice.imagePath}
+                        alt="Invoice"
+                        style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
+                      />
+                      <Typography variant="caption" color="primary" sx={{ mt: 1, display: "block" }}>
+                        Click to download
+                      </Typography>
+                    </a>
+                  ) : (
+                    <Typography variant="body1">No image available</Typography>
+                  )}
+                  <Box mt={2}>
+                    <Button
+                      variant="contained"
+                      component="label"
+                      startIcon={<UploadIcon />}
+                      sx={{ mr: 1 }}
+                      disabled={isImageUploading} // Disable button while uploading
                     >
-                      <MenuItem value="UNPAID">Unpaid</MenuItem>
-                      <MenuItem value="PAID">Paid</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <Button variant="contained" color="success" onClick={saveStatus}>
-                    Save
-                  </Button>
+                      {isImageUploading ? "Uploading..." : "Upload New Image"}
+                      <input
+                        type="file"
+                        hidden
+                        accept="image/*"
+                        onChange={handleImageChange}
+                      />
+                    </Button>
+                    {imagePreview && (
+                      <Box mt={1} display="flex" alignItems="center" gap={2}>
+                        <img
+                          src={imagePreview}
+                          alt="New Invoice Preview"
+                          style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4 }}
+                        />
+                        <Button
+                          variant="contained"
+                          color="primary"
+                          onClick={saveImage}
+                          disabled={isImageUploading} // Disable button while uploading
+                        >
+                          {isImageUploading ? (
+                            <ClipLoader color="#ffffff" size={20} />
+                          ) : (
+                            "Save Image"
+                          )}
+                        </Button>
+                      </Box>
+                    )}
+                  </Box>
                 </Paper>
               </Box>
 
@@ -609,11 +574,7 @@ const InvoicesList = () => {
           <Button
             variant="contained"
             color="error"
-            onClick={() => {
-              setSelectedInvoice(null);
-              setNewImage(null);
-              setImagePreview(null);
-            }}
+            onClick={() => setSelectedInvoice(null)}
           >
             Close
           </Button>
