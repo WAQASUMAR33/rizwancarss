@@ -133,9 +133,9 @@ export async function POST(request) {
           const ledgerEntry = await tx.ledger.create({
             data: {
               admin_id: addedBy,
-              debit: invoiceAmount,
-              credit: newBalance,
-              balance: 0.0,
+              debit: 0.0,
+              credit:invoiceAmount,
+              balance: newBalance,
               description: `Payment for Invoice #${invoice.number}`,
               transaction_at: new Date(),
             },
