@@ -94,29 +94,33 @@ export default function TransportBookingForm() {
   }, []);
 
   useEffect(() => {
+    // Calculate 10% of transportAmount
     const transportAmountYen = parseFloat(transportData.transportAmount) || 0;
-    const tenPercent = transportAmountYen ;
-    const totalWithTenPercent = transportAmountYen + tenPercent;
-    const totalInDollars = totalWithTenPercent * exchangeRate;
+    const tenPercent = transportAmountYen * 0.10; // Correct 10% calculation
+    const totalWithTenPercent = transportAmountYen + tenPercent; // Grand total in Yen
 
+    // Update state
     setTotalAmountYen(transportAmountYen);
     setTenPercentAdd(tenPercent);
     setTotalAmount(totalWithTenPercent);
-    setTotalDollars(totalInDollars);
+    setTotalDollars(totalWithTenPercent * exchangeRate); // Convert grand total to USD
 
     // Recalculate per vehicle amount based on custom values or total if no custom values
-    const customTotalDollars = transportData.vehicles.reduce((sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0), 0);
+    const customTotalDollars = transportData.vehicles.reduce(
+      (sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0),
+      0
+    );
     const vehicleCount = transportData.vehicles.length;
-    const defaultPerVehicleDollarAmount = vehicleCount > 0 ? totalInDollars / vehicleCount : 0;
-    transportData.vehicles.forEach((vehicle, index) => {
-      if (!vehicle.totaldollers || vehicle.totaldollers === 0) {
-        setTransportData((prev) => {
-          const updatedVehicles = [...prev.vehicles];
-          updatedVehicles[index] = { ...updatedVehicles[index], totaldollers: defaultPerVehicleDollarAmount };
-          return { ...prev, vehicles: updatedVehicles };
-        });
-      }
-    });
+    const defaultPerVehicleDollarAmount =
+      vehicleCount > 0 ? totalDollars / vehicleCount : 0;
+    if (vehicleCount > 0) {
+      const updatedVehicles = transportData.vehicles.map((vehicle) => ({
+        ...vehicle,
+        totaldollers:
+          parseFloat(vehicle.totaldollers) || defaultPerVehicleDollarAmount,
+      }));
+      setTransportData((prev) => ({ ...prev, vehicles: updatedVehicles }));
+    }
   }, [transportData.transportAmount, transportData.vehicles, exchangeRate]);
 
   const addToTransport = (vehicle) => {
@@ -217,7 +221,10 @@ export default function TransportBookingForm() {
         amount: totalAmountYen,
         tenPercentAdd: tenPercentAdd,
         totalamount: totalAmount,
-        totaldollers: transportData.vehicles.reduce((sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0), 0),
+        totaldollers: transportData.vehicles.reduce(
+          (sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0),
+          0
+        ),
         imagePath: imagePath || "",
         admin_id: transportData.admin_id,
         createdAt: new Date().toISOString(),
