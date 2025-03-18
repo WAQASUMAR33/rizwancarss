@@ -1,93 +1,255 @@
 "use client";
-import { useState, useEffect } from "react";
-import { ClipLoader } from "react-spinners";
+import { useEffect, useState, useMemo } from "react";
 import {
   TextField,
   Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  IconButton,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
   Box,
   Typography,
+  Paper,
+  IconButton,
+  CircularProgress,
 } from "@mui/material";
-import { Close as CloseIcon, Upload as UploadIcon } from "@mui/icons-material";
+import { Add as PlusIcon, Delete as TrashIcon, Close as CloseIcon } from "@mui/icons-material";
+import { useSelector } from "react-redux";
 
-const InvoicesList = () => {
-  const [invoices, setInvoices] = useState([]);
-  const [filteredInvoices, setFilteredInvoices] = useState([]);
+async function getCurrencies() {
+  try {
+    const response = await fetch(
+      `https://v6.exchangerate-api.com/v6/${process.env.NEXT_PUBLIC_EXCHANGE_RATE_API_KEY}/pair/JPY/USD`
+    );
+    if (!response.ok) {
+      throw new Error("Failed to fetch currency data");
+    }
+    const data = await response.json();
+    console.log("Currency pair data:", data);
+    return data;
+  } catch (error) {
+    console.error("Error fetching currencies:", error);
+    return null;
+  }
+}
+
+export default function NewBookingForm() {
+  const [seaPorts, setSeaPorts] = useState([]);
+  const [admins, setAdmins] = useState([]);
+  const [exchangeRate, setExchangeRate] = useState(null); // JPY to USD rate
+  const [invoiceData, setInvoiceData] = useState({
+    date: "",
+    number: "",
+    status: "UNPAID",
+    auctionHouse: "",
+    imagePath: "",
+    amountYen: 0,
+    amount_doller: 0,
+    added_by: "",
+    vehicles: [],
+  });
+  const username = useSelector((state) => state.user.username);
+  const userid = useSelector((state) => state.user.id);
+
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5;
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [newImage, setNewImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [isImageUploading, setIsImageUploading] = useState(false); // New state for image upload loading
+  const [invoiceImagePreview, setInvoiceImagePreview] = useState(null);
 
+  // Set added_by once on mount or when userid changes
   useEffect(() => {
-    const fetchInvoices = async () => {
+    setInvoiceData((prev) => ({ ...prev, added_by: userid || "" }));
+  }, [userid]);
+
+  // Fetch initial data once on mount
+  useEffect(() => {
+    const fetchSeaPorts = async () => {
       try {
-        console.log("Fetching invoices from API...");
-        const response = await fetch("/api/admin/invoice-management");
-        console.log("Response status:", response.status);
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch invoices: ${response.statusText}`);
-        }
-
+        const response = await fetch("/api/admin/sea_ports");
+        if (!response.ok) throw new Error(`Failed to fetch sea ports: ${response.statusText}`);
         const result = await response.json();
-        console.log("API response:", result);
-
-        const fetchedInvoices = result.data || [];
-        console.log("Fetched invoices:", fetchedInvoices);
-
-        // Normalize field names to match component expectations
-        const normalizedInvoices = fetchedInvoices.map((invoice) => ({
-          ...invoice,
-          createdAt: invoice.createdAt || invoice.created_at,
-          updatedAt: invoice.updatedAt || invoice.updated_at,
-          amountDoller: invoice.amount_doller,
-          amountYen: invoice.amountYen || invoice.amount_yen,
-          vehicles: invoice.vehicles || [],
-          imagePath: invoice.imagePath || "",
-        }));
-        setInvoices(normalizedInvoices);
-        setFilteredInvoices(normalizedInvoices);
-      } catch (err) {
-        console.error("Fetch error:", err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
+        setSeaPorts(result.data || []);
+      } catch (error) {
+        console.error("Error fetching sea ports:", error);
+        setError(error.message);
+        setSeaPorts([]);
       }
     };
 
-    fetchInvoices();
+    const fetchAdmins = async () => {
+      try {
+        const response = await fetch("/api/admin/adminuser");
+        if (!response.ok) throw new Error(`Failed to fetch admins: ${response.statusText}`);
+        const result = await response.json();
+        setAdmins(Array.isArray(result) ? result : result.data || []);
+      } catch (error) {
+        console.error("Error fetching admins:", error);
+        setError(error.message);
+        setAdmins([]);
+      }
+    };
+
+    const fetchExchangeRate = async () => {
+      const currencyData = await getCurrencies();
+      if (currencyData && currencyData.conversion_rate) {
+        setExchangeRate(currencyData.conversion_rate); // JPY to USD rate
+      } else {
+        setError("Failed to fetch exchange rate");
+      }
+    };
+
+    Promise.all([fetchSeaPorts(), fetchAdmins(), fetchExchangeRate()]).finally(() =>
+      setLoading(false)
+    );
   }, []);
 
-  useEffect(() => {
-    const filtered = invoices.filter((invoice) =>
-      (invoice.number || "").toString().includes(searchQuery) ||
-      (invoice.auctionHouse || "").toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredInvoices(filtered);
-    setCurrentPage(1);
-  }, [searchQuery, invoices]);
+  // Calculate updated vehicles with totals using useMemo
+  const updatedVehicles = useMemo(() => {
+    if (!exchangeRate) return invoiceData.vehicles;
 
-  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
-  const paginatedInvoices = filteredInvoices.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+    return invoiceData.vehicles.map((vehicle) => {
+      const auction_amount = parseFloat(vehicle.auction_amount) || 0;
+      const bidAmount = parseFloat(vehicle.bidAmount) || 0;
+      const tenPercentAdd = auction_amount * 0.1;
+      const bidAmount10per = bidAmount * 0.1;
+      const recycleAmount = parseFloat(vehicle.recycleAmount) || 0;
+      const commissionAmount = parseFloat(vehicle.commissionAmount) || 0;
+      const numberPlateTax = parseFloat(vehicle.numberPlateTax) || 0;
+      const repairCharges = parseFloat(vehicle.repairCharges) || 0;
+      const additionalAmount = parseFloat(vehicle.additionalAmount) || 0;
+
+      const totalAmount_yen =
+        auction_amount +
+        tenPercentAdd +
+        bidAmount +
+        bidAmount10per +
+        recycleAmount +
+        commissionAmount +
+        numberPlateTax +
+        repairCharges +
+        additionalAmount;
+
+      const totalAmount_dollers = totalAmount_yen * exchangeRate;
+
+      return {
+        ...vehicle,
+        tenPercentAdd: parseFloat(tenPercentAdd.toFixed(2)),
+        bidAmount10per: parseFloat(bidAmount10per.toFixed(2)),
+        totalAmount_yen: parseFloat(totalAmount_yen.toFixed(2)),
+        totalAmount_dollers: parseFloat(totalAmount_dollers.toFixed(2)),
+      };
+    });
+  }, [invoiceData.vehicles, exchangeRate]);
+
+  // Calculate amount_doller dynamically
+  const amountDoller = useMemo(() => {
+    if (!exchangeRate || !invoiceData.amountYen) return invoiceData.amount_doller || 0;
+    const amountYen = parseFloat(invoiceData.amountYen) || 0;
+    return parseFloat((amountYen * exchangeRate).toFixed(2));
+  }, [invoiceData.amountYen, exchangeRate]);
+
+  const handleInputChange = (field, value) => {
+    setInvoiceData((prev) => {
+      const updatedData = { ...prev, [field]: value };
+      if (field === "amountYen") {
+        updatedData.amountYen = parseFloat(value) || 0;
+        updatedData.amount_doller = parseFloat((updatedData.amountYen * exchangeRate).toFixed(2)) || 0;
+      } else if (field === "amount_doller") {
+        updatedData.amount_doller = parseFloat(value) || 0;
+        if (exchangeRate) {
+          updatedData.amountYen = parseFloat((updatedData.amount_doller / exchangeRate).toFixed(2));
+        }
+      } else if (field === "imagePath" && value) {
+        const file = value[0];
+        setInvoiceImagePreview(file ? URL.createObjectURL(file) : null);
+      }
+      return updatedData;
+    });
+  };
+
+  const addVehicle = () => {
+    setInvoiceData((prev) => ({
+      ...prev,
+      vehicles: [
+        ...prev.vehicles,
+        {
+          chassisNo: "",
+          maker: "",
+          year: "",
+          color: "",
+          engineType: "",
+          auction_amount: 0,
+          tenPercentAdd: 0,
+          bidAmount: 0,
+          bidAmount10per: 0,
+          recycleAmount: 0,
+          auction_house: "",
+          lotnumber: "", // Added lotnumber field
+          commissionAmount: 0,
+          numberPlateTax: 0,
+          repairCharges: 0,
+          totalAmount_yen: 0,
+          totalAmount_dollers: 0,
+          sendingPort: null,
+          additionalAmount: 0,
+          isDocumentRequired: "",
+          documentReceiveDate: null,
+          isOwnership: "",
+          ownershipDate: null,
+          status: "Pending",
+          admin_id: null,
+          vehicleImages: [],
+          vehicleImagePreviews: [],
+          added_by: userid || "",
+        },
+      ],
+    }));
+  };
+
+  const removeVehicle = (index) => {
+    setInvoiceData((prev) => ({
+      ...prev,
+      vehicles: prev.vehicles.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleVehicleChange = (index, field, value) => {
+    const updatedVehicles = [...invoiceData.vehicles];
+    if (field === "vehicleImages") {
+      const newImages = Array.from(value);
+      updatedVehicles[index][field] = [...(updatedVehicles[index][field] || []), ...newImages];
+      updatedVehicles[index]["vehicleImagePreviews"] = updatedVehicles[index][field].map((file) =>
+        typeof file === "string" ? file : URL.createObjectURL(file)
+      );
+    } else {
+      updatedVehicles[index][field] = field === "year" ? String(value) : value;
+      if (
+        [
+          "auction_amount",
+          "bidAmount",
+          "recycleAmount",
+          "commissionAmount",
+          "numberPlateTax",
+          "repairCharges",
+          "additionalAmount",
+        ].includes(field)
+      ) {
+        updatedVehicles[index][field] = parseFloat(value) || 0;
+      }
+    }
+    setInvoiceData((prev) => ({ ...prev, vehicles: updatedVehicles }));
+  };
+
+  const removeImage = (vehicleIndex, imageIndex) => {
+    setInvoiceData((prev) => {
+      const updatedVehicles = [...prev.vehicles];
+      updatedVehicles[vehicleIndex].vehicleImages.splice(imageIndex, 1);
+      updatedVehicles[vehicleIndex].vehicleImagePreviews = updatedVehicles[vehicleIndex].vehicleImages.map((file) =>
+        typeof file === "string" ? file : URL.createObjectURL(file)
+      );
+      return { ...prev, vehicles: updatedVehicles };
+    });
+  };
 
   const convertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
@@ -110,75 +272,137 @@ const InvoicesList = () => {
       return `${process.env.NEXT_PUBLIC_IMAGE_UPLOAD_PATH}/${data.image_url}`;
     } catch (error) {
       console.error("Image upload error:", error);
-      throw new Error("Failed to upload image");
+      return null;
     }
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setNewImage(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
-  };
-
-  const saveImage = async () => {
-    if (!selectedInvoice || !newImage) return;
-
+  const handleSubmit = async () => {
     try {
-      setIsImageUploading(true); // Start loading state
+      setSubmitting(true);
+      let jsonPayload = { ...invoiceData };
 
-      // Convert the new image to base64 and upload it
-      const base64Image = await convertToBase64(newImage);
-      const imagePath = await uploadImageToServer(base64Image);
+      if (!jsonPayload.number || jsonPayload.number === "") throw new Error("Invoice number is required.");
 
-      if (!imagePath) throw new Error("Failed to upload new image");
+      jsonPayload.amountYen = parseFloat(jsonPayload.amountYen) || 0;
+      jsonPayload.amount_doller = parseFloat(jsonPayload.amount_doller) || 0;
+      jsonPayload.added_by = parseInt(userid);
 
-      // Update the invoice with the new image path
-      const response = await fetch(`/api/admin/invoice-management/${selectedInvoice.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imagePath }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to update image: ${response.statusText}`);
+      if (invoiceData.imagePath && invoiceData.imagePath.length > 0) {
+        const base64Image = await convertToBase64(invoiceData.imagePath[0]);
+        const imageUrl = await uploadImageToServer(base64Image);
+        jsonPayload.imagePath = imageUrl || "";
+      } else {
+        jsonPayload.imagePath = "";
       }
 
-      const updatedInvoice = await response.json();
-      console.log("Updated invoice with new image:", updatedInvoice);
+      const updatedVehiclesForSubmit = await Promise.all(
+        updatedVehicles.map(async (vehicle, index) => {
+          let updatedVehicle = { ...vehicle };
+          delete updatedVehicle.vehicleImagePreviews;
 
-      // Update the local state with the new image path
-      setInvoices((prev) =>
-        prev.map((inv) => (inv.id === selectedInvoice.id ? { ...inv, imagePath } : inv))
+          const numericFields = [
+            "auction_amount",
+            "tenPercentAdd",
+            "bidAmount",
+            "bidAmount10per",
+            "recycleAmount",
+            "commissionAmount",
+            "numberPlateTax",
+            "repairCharges",
+            "totalAmount_yen",
+            "totalAmount_dollers",
+            "additionalAmount",
+          ];
+          numericFields.forEach((field) => {
+            updatedVehicle[field] = parseFloat(updatedVehicle[field]) || 0;
+          });
+
+          updatedVehicle.year = String(vehicle.year || "");
+          updatedVehicle.sendingPort = vehicle.sendingPort ? parseInt(vehicle.sendingPort, 10) : null;
+          updatedVehicle.admin_id = vehicle.admin_id ? parseInt(vehicle.admin_id, 10) : null;
+          updatedVehicle.added_by = parseInt(userid);
+
+          if (!updatedVehicle.admin_id) {
+            throw new Error(`Admin ID is required for vehicle ${vehicle.chassisNo || index + 1}`);
+          }
+
+          if (vehicle.documentReceiveDate) {
+            updatedVehicle.documentReceiveDate = new Date(vehicle.documentReceiveDate).toISOString();
+          }
+          if (vehicle.ownershipDate) {
+            updatedVehicle.ownershipDate = new Date(vehicle.ownershipDate).toISOString();
+          }
+
+          if (vehicle.vehicleImages && vehicle.vehicleImages.length > 0) {
+            const imageUrls = await Promise.all(
+              vehicle.vehicleImages.map(async (file) => {
+                const base64Image = await convertToBase64(file);
+                return await uploadImageToServer(base64Image);
+              })
+            );
+            updatedVehicle.vehicleImages = imageUrls.filter((url) => url !== null);
+          } else {
+            updatedVehicle.vehicleImages = [];
+          }
+
+          return updatedVehicle;
+        })
       );
-      setFilteredInvoices((prev) =>
-        prev.map((inv) => (inv.id === selectedInvoice.id ? { ...inv, imagePath } : inv))
-      );
-      setSelectedInvoice((prev) => ({ ...prev, imagePath }));
-      setNewImage(null);
-      setImagePreview(null);
-      alert("Image updated successfully!");
-    } catch (err) {
-      console.error("Error updating image:", err);
-      alert(`Failed to update image: ${err.message}`);
+
+      jsonPayload.vehicles = updatedVehiclesForSubmit;
+      jsonPayload.amount_doller = amountDoller;
+
+      console.log("JSON Payload to be sent:", JSON.stringify(jsonPayload, null, 2));
+
+      const response = await fetch("/api/admin/invoice-management", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(jsonPayload),
+      });
+
+      const textResponse = await response.text();
+      console.log("Raw API response:", textResponse);
+
+      if (!response.ok) throw new Error(`Server Error: ${response.status} - ${textResponse}`);
+
+      const jsonResponse = JSON.parse(textResponse);
+      console.log("Parsed JSON response:", jsonResponse);
+
+      setInvoiceImagePreview(null);
+      setInvoiceData({
+        date: "",
+        number: "",
+        status: "UNPAID",
+        auctionHouse: "",
+        imagePath: "",
+        amountYen: 0,
+        amount_doller: 0,
+        added_by: userid || "",
+        vehicles: [],
+      });
+
+      alert("Invoice and vehicles added successfully!");
+    } catch (error) {
+      console.error("Error submitting invoice:", error);
+      alert(`Failed to submit invoice. Error: ${error.message}`);
     } finally {
-      setIsImageUploading(false); // Stop loading state
+      setSubmitting(false);
     }
   };
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" height="64vh">
+      <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
         <Box textAlign="center">
-          <ClipLoader color="#3b82f6" size={50} />
+          <CircularProgress />
           <Typography variant="body1" sx={{ mt: 2 }}>
-            Loading invoices...
+            Loading sea ports and admins...
           </Typography>
         </Box>
       </Box>
     );
   }
+
   if (error) {
     return (
       <Typography variant="body1" color="error" align="center">
@@ -188,385 +412,388 @@ const InvoicesList = () => {
   }
 
   return (
-    <Paper sx={{ maxWidth: "1200px", mx: "auto", p: 3 }}>
-      <Typography variant="h5" gutterBottom>
-        Invoices List
+    <Box sx={{ p: 2, bgcolor: "#FFFFFF" }}>
+      <Typography variant="h4" gutterBottom>
+        New Vehicle Booking
       </Typography>
 
-      <Box mb={2} position="relative">
-        <TextField
-          label="Search by Invoice Number or Auction House"
-          variant="outlined"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          fullWidth
-          InputProps={{
-            endAdornment: searchQuery && (
-              <IconButton onClick={() => setSearchQuery("")} edge="end">
-                <CloseIcon />
-              </IconButton>
-            ),
-          }}
-        />
-      </Box>
-
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>#</TableCell>
-              <TableCell>Date</TableCell>
-              <TableCell>Number</TableCell>
-              <TableCell>Amount (USD)</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Auction House</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {paginatedInvoices.length > 0 ? (
-              paginatedInvoices.map((invoice, index) => (
-                <TableRow key={invoice.id} hover>
-                  <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
-                  <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
-                  <TableCell>{invoice.number}</TableCell>
-                  <TableCell>${(invoice.amountDoller || 0).toFixed(2)}</TableCell>
-                  <TableCell sx={{ color: invoice.status === "PAID" ? "green" : "red" }}>
-                    {invoice.status}
-                  </TableCell>
-                  <TableCell>{invoice.auctionHouse}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="contained"
-                      color="primary"
-                      size="small"
-                      onClick={() => {
-                        setSelectedInvoice(invoice);
-                        setNewImage(null);
-                        setImagePreview(null);
-                      }}
-                    >
-                      View
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={7} align="center">
-                  No invoices found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      {totalPages > 1 && (
-        <Box display="flex" justifyContent="center" alignItems="center" mt={3} gap={1}>
-          <Button
-            variant="outlined"
-            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-            disabled={currentPage === 1}
-          >
-            Prev
-          </Button>
-          {Array.from({ length: totalPages }, (_, index) => (
-            <Button
-              key={index + 1}
-              variant={currentPage === index + 1 ? "contained" : "outlined"}
-              onClick={() => setCurrentPage(index + 1)}
-            >
-              {index + 1}
-            </Button>
-          ))}
-          <Button
-            variant="outlined"
-            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={currentPage === totalPages}
-          >
-            Next
-          </Button>
-        </Box>
-      )}
-
-      <Dialog
-        open={!!selectedInvoice}
-        onClose={() => setSelectedInvoice(null)}
-        maxWidth="lg"
-        fullWidth
-        PaperProps={{ sx: { maxHeight: "85vh" } }}
-      >
-        <DialogTitle>
+      <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
           Invoice Details
-          <IconButton
-            aria-label="close"
-            onClick={() => setSelectedInvoice(null)}
-            sx={{ position: "absolute", right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent dividers>
-          {selectedInvoice && (
-            <Box>
-              <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2} mb={4}>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Invoice ID</Typography>
-                  <Typography variant="body1">{selectedInvoice.id}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Date</Typography>
-                  <Typography variant="body1">{new Date(selectedInvoice.date).toLocaleDateString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Number</Typography>
-                  <Typography variant="body1">{selectedInvoice.number}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Amount (USD)</Typography>
-                  <Typography variant="body1">${(selectedInvoice.amountDoller || 0).toFixed(2)}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Amount (Yen)</Typography>
-                  <Typography variant="body1">{selectedInvoice.amountYen || 'N/A'}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Auction House</Typography>
-                  <Typography variant="body1">{selectedInvoice.auctionHouse}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Added By</Typography>
-                  <Typography variant="body1">{selectedInvoice.added_by || 'N/A'}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Created At</Typography>
-                  <Typography variant="body1">{new Date(selectedInvoice.createdAt).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                  <Typography variant="body1">{new Date(selectedInvoice.updatedAt).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Invoice Image</Typography>
-                  {selectedInvoice.imagePath ? (
-                    <a href={selectedInvoice.imagePath} download={`invoice-${selectedInvoice.id}.png`}>
-                      <img
-                        src={selectedInvoice.imagePath}
-                        alt="Invoice"
-                        style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
-                      />
-                      <Typography variant="caption" color="primary" sx={{ mt: 1, display: "block" }}>
-                        Click to download
-                      </Typography>
-                    </a>
-                  ) : (
-                    <Typography variant="body1">No image available</Typography>
-                  )}
-                  <Box mt={2}>
-                    <Button
-                      variant="contained"
-                      component="label"
-                      startIcon={<UploadIcon />}
-                      sx={{ mr: 1 }}
-                      disabled={isImageUploading} // Disable button while uploading
-                    >
-                      {isImageUploading ? "Uploading..." : "Upload New Image"}
-                      <input
-                        type="file"
-                        hidden
-                        accept="image/*"
-                        onChange={handleImageChange}
-                      />
-                    </Button>
-                    {imagePreview && (
-                      <Box mt={1} display="flex" alignItems="center" gap={2}>
-                        <img
-                          src={imagePreview}
-                          alt="New Invoice Preview"
-                          style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4 }}
-                        />
-                        <Button
-                          variant="contained"
-                          color="primary"
-                          onClick={saveImage}
-                          disabled={isImageUploading} // Disable button while uploading
-                        >
-                          {isImageUploading ? (
-                            <ClipLoader color="#ffffff" size={20} />
-                          ) : (
-                            "Save Image"
-                          )}
-                        </Button>
-                      </Box>
-                    )}
-                  </Box>
-                </Paper>
-              </Box>
-
-              {selectedInvoice.vehicles && selectedInvoice.vehicles.length > 0 && (
-                <Box mt={4}>
-                  <Typography variant="h6" gutterBottom>Vehicle Details</Typography>
-                  {selectedInvoice.vehicles.map((vehicle, idx) => (
-                    <Paper key={vehicle.id} elevation={1} sx={{ p: 2, mb: 2 }}>
-                      <Typography variant="subtitle1" gutterBottom>Vehicle #{idx + 1}</Typography>
-                      <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Chassis No</Typography>
-                          <Typography variant="body1">{vehicle.chassisNo || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Maker</Typography>
-                          <Typography variant="body1">{vehicle.maker || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Year</Typography>
-                          <Typography variant="body1">{vehicle.year || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Color</Typography>
-                          <Typography variant="body1">{vehicle.color || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Engine Type</Typography>
-                          <Typography variant="body1">{vehicle.engineType || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Auction Amount</Typography>
-                          <Typography variant="body1">{vehicle.auction_amount || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">10% Add</Typography>
-                          <Typography variant="body1">{vehicle.tenPercentAdd || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Recycle Amount</Typography>
-                          <Typography variant="body1">{vehicle.recycleAmount || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Auction House</Typography>
-                          <Typography variant="body1">{vehicle.auction_house || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Bid Amount</Typography>
-                          <Typography variant="body1">{vehicle.bidAmount || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Bid Amount 10%</Typography>
-                          <Typography variant="body1">{vehicle.bidAmount10per || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Commission Amount</Typography>
-                          <Typography variant="body1">{vehicle.commissionAmount || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Number Plate Tax</Typography>
-                          <Typography variant="body1">{vehicle.numberPlateTax || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Repair Charges</Typography>
-                          <Typography variant="body1">{vehicle.repairCharges || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Total Amount (Yen)</Typography>
-                          <Typography variant="body1">{vehicle.totalAmount_yen || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Total Amount (USD)</Typography>
-                          <Typography variant="body1">{vehicle.totalAmount_dollers || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Sending Port</Typography>
-                          <Typography variant="body1">{vehicle.seaPort?.name || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Additional Amount</Typography>
-                          <Typography variant="body1">{vehicle.additionalAmount || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Document Required</Typography>
-                          <Typography variant="body1">{vehicle.isDocumentRequired === 'yes' ? 'Yes' : 'No' || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Document Receive Date</Typography>
-                          <Typography variant="body1">{vehicle.documentReceiveDate ? new Date(vehicle.documentReceiveDate).toLocaleString() : 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Ownership</Typography>
-                          <Typography variant="body1">{vehicle.isOwnership === 'yes' ? 'Yes' : 'No' || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Ownership Date</Typography>
-                          <Typography variant="body1">{vehicle.ownershipDate ? new Date(vehicle.ownershipDate).toLocaleString() : 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Status</Typography>
-                          <Typography variant="body1">{vehicle.status || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Admin</Typography>
-                          <Typography variant="body1">{vehicle.admin?.fullname || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Added By</Typography>
-                          <Typography variant="body1">{vehicle.added_by || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Created At</Typography>
-                          <Typography variant="body1">{new Date(vehicle.createdAt).toLocaleString()}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                          <Typography variant="body1">{new Date(vehicle.updatedAt).toLocaleString()}</Typography>
-                        </Box>
-                        {vehicle.vehicleImages && vehicle.vehicleImages.length > 0 ? (
-                          <Box sx={{ gridColumn: "span 4" }}>
-                            <Typography variant="caption" color="textSecondary">Images</Typography>
-                            <Box display="flex" gap={2} mt={1}>
-                              {vehicle.vehicleImages.map((image, imgIdx) => (
-                                <a
-                                  key={imgIdx}
-                                  href={image.imagePath}
-                                  download={`vehicle-${vehicle.id}-image-${imgIdx + 1}.${image.imagePath.split('.').pop()}`}
-                                >
-                                  <img
-                                    src={image.imagePath}
-                                    alt={`Vehicle Image ${imgIdx + 1}`}
-                                    style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
-                                  />
-                                  <Typography variant="caption" color="primary" sx={{ mt: 1, display: "block", textAlign: "center" }}>
-                                    Download
-                                  </Typography>
-                                </a>
-                              ))}
-                            </Box>
-                          </Box>
-                        ) : (
-                          <Box sx={{ gridColumn: "span 4" }}>
-                            <Typography variant="caption" color="textSecondary">Images</Typography>
-                            <Typography variant="body1">No images available</Typography>
-                          </Box>
-                        )}
-                      </Box>
-                    </Paper>
-                  ))}
-                </Box>
-              )}
+        </Typography>
+        <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
+          <TextField
+            type="date"
+            label="Invoice Date"
+            variant="outlined"
+            value={invoiceData.date}
+            onChange={(e) => handleInputChange("date", e.target.value)}
+            InputLabelProps={{ shrink: true }}
+            fullWidth
+          />
+          <TextField
+            type="text"
+            label="Invoice Number"
+            variant="outlined"
+            value={invoiceData.number}
+            onChange={(e) => handleInputChange("number", e.target.value)}
+            required
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Total Amount (Yen)"
+            variant="outlined"
+            value={invoiceData.amountYen}
+            onChange={(e) => handleInputChange("amountYen", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
+            label="Total Amount (Dollar)"
+            variant="outlined"
+            value={amountDoller}
+            onChange={(e) => handleInputChange("amount_doller", e.target.value)}
+            fullWidth
+          />
+          <FormControl variant="outlined" fullWidth>
+            <InputLabel>Status</InputLabel>
+            <Select
+              value={invoiceData.status}
+              onChange={(e) => handleInputChange("status", e.target.value)}
+              label="Status"
+            >
+              <MenuItem value="UNPAID">Unpaid</MenuItem>
+              <MenuItem value="PAID">Paid</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField
+            label="Auction House"
+            variant="outlined"
+            value={invoiceData.auctionHouse}
+            onChange={(e) => handleInputChange("auctionHouse", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="file"
+            variant="outlined"
+            onChange={(e) => handleInputChange("imagePath", e.target.files)}
+            inputProps={{ accept: "image/*" }}
+            fullWidth
+            label="Upload Invoice Image"
+          />
+          {invoiceImagePreview && (
+            <Box mt={2}>
+              <img
+                src={invoiceImagePreview}
+                alt="Invoice Preview"
+                style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 8 }}
+              />
             </Box>
           )}
-        </DialogContent>
-        <DialogActions>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={() => setSelectedInvoice(null)}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Paper>
-  );
-};
+          <Box gridColumn="span 2"></Box>
+        </Box>
+      </Paper>
 
-export default InvoicesList;
+      <Paper elevation={3} sx={{ p: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Vehicle Details
+        </Typography>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={addVehicle}
+          startIcon={<PlusIcon />}
+          sx={{ mb: 2 }}
+        >
+          Add Vehicle
+        </Button>
+        {updatedVehicles.map((vehicle, index) => (
+          <Paper key={index} elevation={1} sx={{ p: 2, mb: 2, bgcolor: "#f5f5f5" }}>
+            <Box display="grid" gridTemplateColumns="repeat(6, 1fr)" gap={2}>
+              <TextField
+                label="Chassis No"
+                variant="outlined"
+                value={vehicle.chassisNo}
+                onChange={(e) => handleVehicleChange(index, "chassisNo", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Maker"
+                variant="outlined"
+                value={vehicle.maker}
+                onChange={(e) => handleVehicleChange(index, "maker", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="text"
+                label="Year"
+                variant="outlined"
+                value={vehicle.year}
+                onChange={(e) => handleVehicleChange(index, "year", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Color"
+                variant="outlined"
+                value={vehicle.color}
+                onChange={(e) => handleVehicleChange(index, "color", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Engine Type"
+                variant="outlined"
+                value={vehicle.engineType}
+                onChange={(e) => handleVehicleChange(index, "engineType", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Auction House"
+                variant="outlined"
+                value={vehicle.auction_house}
+                onChange={(e) => handleVehicleChange(index, "auction_house", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                label="Lot Number"
+                variant="outlined"
+                value={vehicle.lotnumber}
+                onChange={(e) => handleVehicleChange(index, "lotnumber", e.target.value)}
+                fullWidth
+              />
+              <FormControl variant="outlined" fullWidth>
+                <InputLabel>Sending Port</InputLabel>
+                <Select
+                  value={vehicle.sendingPort || ""}
+                  onChange={(e) => handleVehicleChange(index, "sendingPort", e.target.value)}
+                  label="Sending Port"
+                >
+                  <MenuItem value="">
+                    <em>Select Sending Port</em>
+                  </MenuItem>
+                  {seaPorts.map((port) => (
+                    <MenuItem key={port.id} value={port.id}>
+                      {port.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl variant="outlined" fullWidth required>
+                <InputLabel>Admin</InputLabel>
+                <Select
+                  value={vehicle.admin_id || ""}
+                  onChange={(e) => handleVehicleChange(index, "admin_id", e.target.value)}
+                  label="Admin"
+                >
+                  <MenuItem value="">
+                    <em>Select Admin</em>
+                  </MenuItem>
+                  {admins.map((admin) => (
+                    <MenuItem key={admin.id} value={admin.id}>
+                      {admin.username} ({admin.fullname})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+
+              <TextField
+                type="number"
+                label="Bid Amount"
+                variant="outlined"
+                value={vehicle.bidAmount}
+                onChange={(e) => handleVehicleChange(index, "bidAmount", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Bid Amount 10%"
+                variant="outlined"
+                value={vehicle.bidAmount10per}
+                InputProps={{ readOnly: true }}
+                fullWidth
+              />
+              
+              <TextField
+                type="number"
+                label="Auction Amount"
+                variant="outlined"
+                value={vehicle.auction_amount}
+                onChange={(e) => handleVehicleChange(index, "auction_amount", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Ten Percent Add"
+                variant="outlined"
+                value={vehicle.tenPercentAdd}
+                InputProps={{ readOnly: true }}
+                fullWidth
+              />
+             
+              <TextField
+                type="number"
+                label="Recycle Amount"
+                variant="outlined"
+                value={vehicle.recycleAmount}
+                onChange={(e) => handleVehicleChange(index, "recycleAmount", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Commission Amount"
+                variant="outlined"
+                value={vehicle.commissionAmount}
+                onChange={(e) => handleVehicleChange(index, "commissionAmount", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Number Plate Tax"
+                variant="outlined"
+                value={vehicle.numberPlateTax}
+                onChange={(e) => handleVehicleChange(index, "numberPlateTax", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Repair Charges"
+                variant="outlined"
+                value={vehicle.repairCharges}
+                onChange={(e) => handleVehicleChange(index, "repairCharges", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Additional Amount"
+                variant="outlined"
+                value={vehicle.additionalAmount}
+                onChange={(e) => handleVehicleChange(index, "additionalAmount", e.target.value)}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Total Amount (Yen)"
+                variant="outlined"
+                value={vehicle.totalAmount_yen}
+                InputProps={{ readOnly: true }}
+                fullWidth
+              />
+              <TextField
+                type="number"
+                label="Total Amount (Dollars)"
+                variant="outlined"
+                value={vehicle.totalAmount_dollers}
+                InputProps={{ readOnly: true }}
+                fullWidth
+              />
+              <FormControl variant="outlined" fullWidth>
+                <InputLabel>Document Required</InputLabel>
+                <Select
+                  value={vehicle.isDocumentRequired}
+                  onChange={(e) => handleVehicleChange(index, "isDocumentRequired", e.target.value)}
+                  label="Document Required"
+                >
+                  <MenuItem value="">
+                    <em>Select Document Requirement</em>
+                  </MenuItem>
+                  <MenuItem value="yes">Yes</MenuItem>
+                  <MenuItem value="no">No</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                type="date"
+                label="Document Receive Date"
+                variant="outlined"
+                value={vehicle.documentReceiveDate ? vehicle.documentReceiveDate.split("T")[0] : ""}
+                onChange={(e) => handleVehicleChange(index, "documentReceiveDate", e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+              <FormControl variant="outlined" fullWidth>
+                <InputLabel>Ownership</InputLabel>
+                <Select
+                  value={vehicle.isOwnership}
+                  onChange={(e) => handleVehicleChange(index, "isOwnership", e.target.value)}
+                  label="Ownership"
+                >
+                  <MenuItem value="">
+                    <em>Select Ownership</em>
+                  </MenuItem>
+                  <MenuItem value="yes">Yes</MenuItem>
+                  <MenuItem value="no">No</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                type="date"
+                label="Ownership Date"
+                variant="outlined"
+                value={vehicle.ownershipDate ? vehicle.ownershipDate.split("T")[0] : ""}
+                onChange={(e) => handleVehicleChange(index, "ownershipDate", e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                fullWidth
+              />
+              <FormControl variant="outlined" fullWidth>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={vehicle.status}
+                  onChange={(e) => handleVehicleChange(index, "status", e.target.value)}
+                  label="Status"
+                >
+                  <MenuItem value="Pending">Pending</MenuItem>
+                </Select>
+              </FormControl>
+              <TextField
+                type="file"
+                variant="outlined"
+                onChange={(e) => handleVehicleChange(index, "vehicleImages", e.target.files)}
+                inputProps={{ multiple: true, accept: "image/*" }}
+                label="Upload Vehicle Images"
+                fullWidth
+              />
+              <Button
+                variant="contained"
+                color="error"
+                onClick={() => removeVehicle(index)}
+                startIcon={<TrashIcon />}
+              >
+                Remove
+              </Button>
+            </Box>
+            {vehicle.vehicleImagePreviews && vehicle.vehicleImagePreviews.length > 0 && (
+              <Box mt={2} display="grid" gridTemplateColumns="repeat(8, 1fr)" gap={1}>
+                {vehicle.vehicleImagePreviews.map((src, imgIndex) => (
+                  <Box key={imgIndex} position="relative" width={96} height={96}>
+                    <img
+                      src={src}
+                      alt={`Preview ${imgIndex}`}
+                      style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8 }}
+                    />
+                    <IconButton
+                      size="small"
+                      onClick={() => removeImage(index, imgIndex)}
+                      sx={{ position: "absolute", top: 4, right: 4, bgcolor: "red", color: "white" }}
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Paper>
+        ))}
+      </Paper>
+
+      <Button
+        variant="contained"
+        color="success"
+        onClick={handleSubmit}
+        disabled={submitting}
+        sx={{ mt: 2 }}
+        startIcon={submitting ? <CircularProgress size={20} color="inherit" /> : null}
+      >
+        {submitting ? "Submitting..." : "Submit Invoice"}
+      </Button>
+    </Box>
+  );
+}
