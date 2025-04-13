@@ -1,11 +1,25 @@
-// app/api/admin/vehicles/route.js
 import { NextResponse } from "next/server";
 import prisma from "@/utils/prisma";
 
 export async function GET() {
   try {
     const vehicles = await prisma.addVehicle.findMany({
-      include: {
+      select: {
+        id: true,
+        chassisNo: true,
+        maker: true,
+        year: true,
+        status: true,
+        auction_amount: true,
+        tenPercentAdd: true,
+        recycleAmount: true,
+        bidAmount: true,
+        commissionAmount: true,
+        numberPlateTax: true,
+        repairCharges: true,
+        totalAmount_yen: true,
+        totalAmount_dollers: true,
+        additionalAmount: true,
         seaPort: {
           select: {
             id: true,
@@ -29,8 +43,7 @@ export async function GET() {
         admin: {
           select: {
             id: true,
-            fullname: true, // Changed from 'name' to 'fullname' based on available fields
-            // You can add other fields like 'username' or 'role' if needed
+            fullname: true,
           },
         },
         containerItems: {
@@ -38,11 +51,6 @@ export async function GET() {
             amount: true,
           },
         },
-      },
-      where: {
-        OR: [
-          { id: { gte: 0 } }, // This ensures we get all vehicles
-        ],
       },
     });
 
@@ -54,11 +62,10 @@ export async function GET() {
             prisma.transport.findFirst({
               where: { vehicleNo: vehicle.id },
               select: {
-                amount: true,
-                tenPercentAdd: true,
-                totalamount: true,
-                totaldollers: true,
-                v_amount:true,
+                v_amount: true,
+                v_10per: true,              // Fixed: tenPercentAdd -> v_10per
+                v_amount_total: true,       // Fixed: totalamount -> v_amount_total
+                v_amount_total_dollers: true, // Fixed: totaldollers -> v_amount_total_dollers
               },
             }),
             prisma.inspection.findFirst({
@@ -160,8 +167,7 @@ export async function GET() {
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error occurred";
-
- 
+    console.error("Error in GET /api/admin/vehicles:", errorMessage, error.stack);
 
     return NextResponse.json(
       {
@@ -171,5 +177,7 @@ export async function GET() {
       },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 }

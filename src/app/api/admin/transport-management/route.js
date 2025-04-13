@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/utils/prisma';
 
-
-
 export async function POST(request) {
   try {
     // Parse the incoming request data
@@ -13,13 +11,9 @@ export async function POST(request) {
     const {
       date,
       deliveryDate,
-      invoiceno,
       port,
       company,
-      amount,
-      tenPercentAdd,
-      totalamount,
-      totaldollers,
+      paymentStatus,
       imagePath,
       admin_id, // Ignored since we're hardcoding admin_id 1
       createdAt,
@@ -29,27 +23,36 @@ export async function POST(request) {
 
     // Validation for required fields
     if (!port || !company || !vehicles || vehicles.length === 0) {
-      console.log("Validation failed: Missing required fields");
+      console.log("Validation failed: Missing required fields", { port, company, vehicles });
       return NextResponse.json(
         { error: "Missing required fields (port, company, or vehicles)", status: false },
         { status: 400 }
       );
     }
 
-    // Validate numeric fields
-    if (isNaN(amount) || isNaN(tenPercentAdd) || isNaN(totalamount) || isNaN(totaldollers)) {
-      console.log("Validation failed: Invalid numeric fields");
+    // Validate paymentStatus
+    if (!["Paid", "UnPaid"].includes(paymentStatus)) {
+      console.log("Validation failed: Invalid paymentStatus", { paymentStatus });
       return NextResponse.json(
-        { error: "Invalid numeric fields (amount, tenPercentAdd, totalamount, or totaldollers)", status: false },
+        { error: "Invalid paymentStatus. Must be 'Paid' or 'UnPaid'", status: false },
         { status: 400 }
       );
     }
 
-    // Validate vehicle data
+    // Validate vehicle data and totals
     vehicles.forEach((vehicle, index) => {
-      if (!vehicle.vehicleNo || !vehicle.totaldollers || vehicle.id === undefined) {
-        console.log(`Validation failed: Missing vehicle fields at index ${index}`);
-        throw new Error(`Missing required vehicle fields (vehicleNo, totaldollers, or id) at index ${index}`);
+      if (
+        !vehicle.vehicleNo ||
+        vehicle.id === undefined ||
+        isNaN(vehicle.v_amount) ||
+        isNaN(vehicle.v_10per) ||
+        isNaN(vehicle.v_amount_total) ||
+        isNaN(vehicle.v_amount_total_dollers)
+      ) {
+        console.log(`Validation failed: Missing vehicle fields at index ${index}`, vehicle);
+        throw new Error(
+          `Missing or invalid required vehicle fields (vehicleNo, id, v_amount, v_10per, v_amount_total, or v_amount_total_dollers) at index ${index}`
+        );
       }
     });
 
@@ -72,7 +75,10 @@ export async function POST(request) {
     // Check if all vehicles have status "Pending"
     const invalidVehicles = vehicleRecords.filter((v) => v.status !== "Pending");
     if (invalidVehicles.length > 0) {
-      console.log("Invalid vehicle statuses:", invalidVehicles.map((v) => ({ id: v.id, status: v.status })));
+      console.log(
+        "Invalid vehicle statuses:",
+        invalidVehicles.map((v) => ({ id: v.id, status: v.status }))
+      );
       return NextResponse.json(
         { error: "One or more vehicles are not in 'Pending' status", status: false },
         { status: 400 }
@@ -95,87 +101,120 @@ export async function POST(request) {
       );
     }
 
-    const currentBalance = admin.balance;
+    const currentBalance = parseFloat(admin.balance);
     console.log("Current admin balance:", currentBalance);
 
-    // Calculate totalTransactionAmount as the sum of all vehicles' totaldollers
-    const totalTransactionAmount = vehicles.reduce((sum, vehicle) => {
-      return sum + parseFloat(vehicle.totaldollers || 0);
-    }, 0);
-    console.log("Calculated totalTransactionAmount:", totalTransactionAmount);
+    // Calculate totalTransactionAmount and newBalance (only if paymentStatus is "Paid")
+    let totalTransactionAmount = 0;
+    let newBalance = currentBalance;
+    if (paymentStatus === "Paid") {
+      // Use the totals from the first vehicle (they are shared across all vehicles)
+      const firstVehicle = vehicles[0];
+      totalTransactionAmount = parseFloat(firstVehicle.v_amount_total_dollers);
+      console.log("Calculated totalTransactionAmount (USD):", totalTransactionAmount);
 
-    const newBalance = currentBalance - totalTransactionAmount;
+      if (isNaN(totalTransactionAmount)) {
+        console.log("Validation failed: Invalid v_amount_total_dollers");
+        return NextResponse.json(
+          { error: "Invalid v_amount_total_dollers", status: false },
+          { status: 400 }
+        );
+      }
 
-    // Check for sufficient balance (optional, uncomment if needed)
-    // if (newBalance < 0) {
-    //   console.log("Insufficient balance. Current:", currentBalance, "Required:", totalTransactionAmount);
-    //   return NextResponse.json(
-    //     { error: "Insufficient admin balance", status: false },
-    //     { status: 400 }
-    //   );
-    // }
+      newBalance = currentBalance - totalTransactionAmount;
+      console.log("New admin balance after deduction:", newBalance);
+
+      // Optional: Check for sufficient balance
+      if (newBalance < 0) {
+        console.log(
+          "Insufficient balance. Current:",
+          currentBalance,
+          "Required:",
+          totalTransactionAmount
+        );
+        return NextResponse.json(
+          { error: "Insufficient admin balance", status: false },
+          { status: 400 }
+        );
+      }
+    }
 
     // Prepare Prisma operations
     const operations = [];
 
     // Create a Transport record for each vehicle
     for (const vehicle of vehicles) {
+      const transportData = {
+        date: date ? new Date(date) : new Date(),
+        deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
+        port,
+        company,
+        paid_status: paymentStatus,
+        v_amount: parseFloat(vehicle.v_amount),
+        v_10per: parseFloat(vehicle.v_10per),
+        v_amount_total: parseFloat(vehicle.v_amount_total),
+        v_amount_total_dollers: parseFloat(vehicle.v_amount_total_dollers),
+        imagePath: imagePath || "",
+        vehicleNo: parseInt(vehicle.vehicleNo),
+        admin_id: targetAdminId,
+        createdAt: createdAt ? new Date(createdAt) : new Date(),
+        updatedAt: updatedAt ? new Date(updatedAt) : new Date(),
+      };
+      console.log("Creating Transport record with data:", JSON.stringify(transportData, null, 2));
+
       operations.push(
         prisma.transport.create({
-        data: {
-          date: date ? new Date(date) : new Date(),
-          deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
-          invoiceno,
-          port,
-          company,
-          v_amount: parseFloat(vehicle.totaldollers),
-          amount: parseFloat(amount),
-          tenPercentAdd: parseFloat(tenPercentAdd),
-          totalamount: parseFloat(totalamount),
-          totaldollers: parseFloat(totaldollers),
-          imagePath: imagePath || "",
-          vehicleNo: parseInt(vehicle.id), // Use vehicle.id as an integer
-          admin_id: targetAdminId, // Use hardcoded admin_id 1
-          createdAt: createdAt ? new Date(createdAt) : new Date(),
-          updatedAt: updatedAt ? new Date(updatedAt) : new Date(),
-        },
-      }));
+          data: transportData,
+        })
+      );
 
-      // Update the corresponding AddVehicle status
+      const vehicleUpdateData = {
+        status: "Transport", // Changed from "Transport" to "InTransport"
+        updatedAt: new Date(),
+      };
+      console.log("Updating AddVehicle record with data:", JSON.stringify(vehicleUpdateData, null, 2));
+
       operations.push(
         prisma.addVehicle.update({
           where: { id: parseInt(vehicle.id) },
-          data: {
-            status: "Transport",
-            updatedAt: new Date(),
-          },
+          data: vehicleUpdateData,
         })
       );
     }
 
-    // Update Admin balance (for hardcoded admin_id 1)
-    operations.push(
-      prisma.admin.update({
-        where: { id: targetAdminId },
-        data: { balance: newBalance },
-      })
-    );
+    // Update Admin balance and create Ledger entry only if paymentStatus is "Paid"
+    if (paymentStatus === "Paid") {
+      const adminUpdateData = {
+        balance: newBalance,
+        updated_at: new Date(),
+      };
+      console.log("Updating Admin balance with data:", JSON.stringify(adminUpdateData, null, 2));
 
-    // Create a single Ledger entry for the total transaction (for hardcoded admin_id 1)
-    operations.push(
-      prisma.ledger.create({
-        data: {
-          admin_id: targetAdminId,
-          debit: 0.0, // Record the deducted amount as debit
-          credit: totalTransactionAmount, // No credit for an "Out" transaction
-          balance: newBalance, // The new balance after deduction
-          description: `Transport booking for ${vehicles.length} vehicles - Total: ${totalTransactionAmount} Yen`,
-          transaction_at: new Date(),
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
-      })
-    );
+      operations.push(
+        prisma.admin.update({
+          where: { id: targetAdminId },
+          data: adminUpdateData,
+        })
+      );
+
+      const ledgerData = {
+        admin_id: targetAdminId,
+        debit: 0.0,
+        credit: totalTransactionAmount,
+        balance: newBalance,
+        description: `Transport booking for ${vehicles.length} vehicles - Total: ${totalTransactionAmount} USD`,
+        transaction_at: new Date(),
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      console.log("Creating Ledger entry with data:", JSON.stringify(ledgerData, null, 2));
+
+      operations.push(
+        prisma.ledger.create({
+          data: ledgerData,
+        })
+      );
+    }
 
     console.log("Executing transaction with", operations.length, "operations");
     const results = await prisma.$transaction(operations);
@@ -185,7 +224,10 @@ export async function POST(request) {
 
     return NextResponse.json(
       {
-        message: "Transports created successfully, admin balance updated, and ledger entry added",
+        message:
+          paymentStatus === "Paid"
+            ? "Transports created successfully, admin balance updated, and ledger entry added"
+            : "Transports created successfully (UnPaid status, no balance or ledger updates)",
         status: true,
         data: createdTransports,
       },
@@ -206,7 +248,6 @@ export async function POST(request) {
   }
 }
 
-
 export async function GET(request) {
   try {
     console.log("Fetching transports from API...");
@@ -226,16 +267,14 @@ export async function GET(request) {
       orderBy: { createdAt: "desc" },
     });
     console.log("Transports fetched:", transports.length);
+    console.log("Transports data:", JSON.stringify(transports, null, 2));
 
     console.log("Processing transports with vehicles...");
     const transportWithVehicles = await Promise.all(
       transports.map(async (transport) => {
-        const vehicleNos = transport.vehicleNo.split(", ").filter(Boolean);
-        console.log(`Fetching vehicles for transport ${transport.id}, vehicleNos:`, vehicleNos);
-
-        const vehicles = await prisma.addVehicle.findMany({
+        const vehicle = await prisma.addVehicle.findFirst({
           where: {
-            chassisNo: { in: vehicleNos },
+            id: transport.vehicleNo,
           },
           select: {
             id: true,
@@ -243,14 +282,13 @@ export async function GET(request) {
             maker: true,
             year: true,
             status: true,
-            admin_id: true, // Keep admin_id without relation
+            admin_id: true,
           },
         });
-        console.log(`Vehicles fetched for transport ${transport.id}:`, vehicles.length);
 
         return {
           ...transport,
-          vehicles,
+          vehicles: vehicle ? [vehicle] : [],
         };
       })
     );
@@ -259,7 +297,7 @@ export async function GET(request) {
 
     return NextResponse.json(
       {
-        message: "Transports fetched successfully",
+        message: "Transports created successfully",
         status: true,
         data: transportWithVehicles,
       },

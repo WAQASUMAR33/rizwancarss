@@ -26,33 +26,32 @@ async function getExchangeRate() {
     );
     if (!response.ok) throw new Error("Failed to fetch exchange rate");
     const data = await response.json();
-    return data.conversion_rate || 0.0067; // Fallback rate if API fails
+    return data.conversion_rate || 0.0067;
   } catch (error) {
     console.error("Error fetching exchange rate:", error);
-    return 0.0067; // Default fallback rate (approx JPY to USD)
+    return 0.0067;
   }
 }
 
 export default function TransportBookingForm() {
-  const [allVehicles, setAllVehicles] = useState([]); // Store all vehicles for dropdown
+  const [allVehicles, setAllVehicles] = useState([]);
   const [seaPorts, setSeaPorts] = useState([]);
   const [exchangeRate, setExchangeRate] = useState(0);
 
   const [transportData, setTransportData] = useState({
     date: "",
     deliveryDate: "",
-    invoiceno: "",
     port: "",
     company: "",
-    transportAmount: 0,
+    paymentStatus: "UnPaid",
     receiptImage: null,
     admin_id: null,
     vehicles: [],
   });
   const [totalAmountYen, setTotalAmountYen] = useState(0);
   const [tenPercentAdd, setTenPercentAdd] = useState(0);
-  const [totalAmount, setTotalAmount] = useState(0);
-  const [totalDollars, setTotalDollars] = useState(0);
+  const [grandTotalYen, setGrandTotalYen] = useState(0);
+  const [grandTotalDollars, setGrandTotalDollars] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
@@ -79,7 +78,6 @@ export default function TransportBookingForm() {
 
         if (!vehiclesResponse.ok) throw new Error("Failed to fetch vehicles");
         const vehiclesData = await vehiclesResponse.json();
-        // Filter vehicles to only include those with "Pending" status
         const pendingVehicles = (vehiclesData.data || vehiclesData).filter(
           (vehicle) => vehicle.status === "Pending"
         );
@@ -94,47 +92,27 @@ export default function TransportBookingForm() {
   }, []);
 
   useEffect(() => {
-    // Calculate 10% of transportAmount
-    const transportAmountYen = parseFloat(transportData.transportAmount) || 0;
-    const tenPercent = transportAmountYen * 0.10; // Correct 10% calculation
-    const totalWithTenPercent = transportAmountYen + tenPercent; // Grand total in Yen
-
-    // Update state
-    setTotalAmountYen(transportAmountYen);
-    setTenPercentAdd(tenPercent);
-    setTotalAmount(totalWithTenPercent);
-    setTotalDollars(totalWithTenPercent * exchangeRate); // Convert grand total to USD
-
-    // Recalculate per vehicle amount based on custom values or total if no custom values
-    const customTotalDollars = transportData.vehicles.reduce(
-      (sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0),
+    const totalYen = transportData.vehicles.reduce(
+      (sum, vehicle) => sum + (parseFloat(vehicle.v_amount) || 0),
       0
     );
-    const vehicleCount = transportData.vehicles.length;
-    const defaultPerVehicleDollarAmount =
-      vehicleCount > 0 ? totalDollars / vehicleCount : 0;
-    if (vehicleCount > 0) {
-      const updatedVehicles = transportData.vehicles.map((vehicle) => ({
-        ...vehicle,
-        totaldollers:
-          parseFloat(vehicle.totaldollers) || defaultPerVehicleDollarAmount,
-      }));
-      setTransportData((prev) => ({ ...prev, vehicles: updatedVehicles }));
-    }
-  }, [transportData.transportAmount, transportData.vehicles, exchangeRate]);
+    const tenPercent = totalYen * 0.1;
+    const grandTotal = totalYen + tenPercent;
+    const totalDollars = grandTotal * (exchangeRate || 0.0067); // Fallback exchange rate
+
+    setTotalAmountYen(totalYen || 0);
+    setTenPercentAdd(tenPercent || 0);
+    setGrandTotalYen(grandTotal || 0);
+    setGrandTotalDollars(totalDollars || 0);
+  }, [transportData.vehicles, exchangeRate]);
 
   const addToTransport = (vehicle) => {
     if (!vehicle) return;
 
-    // Check if vehicle is already added
     if (transportData.vehicles.some((v) => v.id === vehicle.id)) {
       setError("Vehicle already added to the list");
       return;
     }
-
-    // Calculate initial share based on totalDollars
-    const vehicleCount = transportData.vehicles.length + 1;
-    const initialShare = vehicleCount > 0 ? totalDollars / vehicleCount : 0;
 
     setTransportData((prev) => ({
       ...prev,
@@ -143,11 +121,11 @@ export default function TransportBookingForm() {
         {
           id: vehicle.id,
           chassisNo: vehicle.chassisNo,
-          totaldollers: initialShare, // Initial share, editable later
+          v_amount: 0,
         },
       ],
     }));
-    setError(""); // Clear any previous error
+    setError("");
   };
 
   const removeVehicle = (index) => {
@@ -156,7 +134,6 @@ export default function TransportBookingForm() {
   };
 
   const handleInputChange = (field, value) => {
-    // Ensure date fields are valid or default to current date
     if ((field === "date" || field === "deliveryDate") && !value) {
       value = new Date().toISOString().split("T")[0];
     }
@@ -171,7 +148,7 @@ export default function TransportBookingForm() {
     const newValue = parseFloat(value) || 0;
     setTransportData((prev) => {
       const updatedVehicles = [...prev.vehicles];
-      updatedVehicles[index] = { ...updatedVehicles[index], totaldollers: newValue };
+      updatedVehicles[index] = { ...updatedVehicles[index], v_amount: newValue };
       return { ...prev, vehicles: updatedVehicles };
     });
   };
@@ -205,6 +182,15 @@ export default function TransportBookingForm() {
     try {
       setSubmitting(true);
 
+      // Validate required fields before submission
+      if (!transportData.port || !transportData.company) {
+        throw new Error("Port and Company are required fields");
+      }
+
+      if (transportData.vehicles.length === 0) {
+        throw new Error("At least one vehicle is required");
+      }
+
       let imagePath = "";
       if (transportData.receiptImage) {
         const base64Image = await convertToBase64(transportData.receiptImage[0]);
@@ -213,30 +199,26 @@ export default function TransportBookingForm() {
       }
 
       const payload = {
-        date: transportData.date,
-        deliveryDate: transportData.deliveryDate,
-        invoiceno: transportData.invoiceno || "",
+        date: transportData.date || new Date().toISOString().split("T")[0],
+        deliveryDate: transportData.deliveryDate || new Date().toISOString().split("T")[0],
         port: transportData.port,
         company: transportData.company,
-        amount: totalAmountYen,
-        tenPercentAdd: tenPercentAdd,
-        totalamount: totalAmount,
-        totaldollers: transportData.vehicles.reduce(
-          (sum, vehicle) => sum + (parseFloat(vehicle.totaldollers) || 0),
-          0
-        ),
+        paymentStatus: transportData.paymentStatus,
         imagePath: imagePath || "",
-        admin_id: transportData.admin_id,
+        admin_id: transportData.admin_id || 1, // Fallback to 1 if admin_id is not set
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         vehicles: transportData.vehicles.map((v) => ({
           id: v.id,
-          vehicleNo: v.chassisNo,
-          totaldollers: v.totaldollers,
+          vehicleNo: v.id,
+          v_amount: parseFloat(v.v_amount) || 0,
+          v_10per: tenPercentAdd || 0,
+          v_amount_total: grandTotalYen || 0,
+          v_amount_total_dollers: grandTotalDollars || 0,
         })),
       };
 
-      console.log("Data to be submitted:", JSON.stringify(payload, null, 2));
+      console.log("Submitting payload:", JSON.stringify(payload, null, 2));
 
       const response = await fetch("/api/admin/transport-management", {
         method: "POST",
@@ -244,17 +226,9 @@ export default function TransportBookingForm() {
         body: JSON.stringify(payload),
       });
 
-      const responseText = await response.text();
-      console.log("Response status:", response.status);
-      console.log("Response text:", responseText);
-
       if (!response.ok) {
-        let errorData;
-        try {
-          errorData = responseText ? JSON.parse(responseText) : { message: "No response body" };
-        } catch (e) {
-          throw new Error(`Failed to parse server response: ${responseText || "Empty response"}`);
-        }
+        const errorData = await response.json();
+        console.error("API error response:", errorData);
         throw new Error(errorData.message || "Failed to submit transport data");
       }
 
@@ -262,10 +236,9 @@ export default function TransportBookingForm() {
       setTransportData({
         date: "",
         deliveryDate: "",
-        invoiceno: "",
         port: "",
         company: "",
-        transportAmount: 0,
+        paymentStatus: "UnPaid",
         receiptImage: null,
         admin_id: adminId,
         vehicles: [],
@@ -290,7 +263,7 @@ export default function TransportBookingForm() {
         <Typography variant="h6" gutterBottom>
           Transport Details
         </Typography>
-        <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
+        <Box display="grid" gridTemplateColumns="repeat(3, 1fr)" gap={2}>
           <TextField
             type="date"
             label="Transport Date"
@@ -311,14 +284,7 @@ export default function TransportBookingForm() {
             fullWidth
             required
           />
-          <TextField
-            label="Invoice Number"
-            variant="outlined"
-            value={transportData.invoiceno}
-            onChange={(e) => handleInputChange("invoiceno", e.target.value)}
-            fullWidth
-          />
-          <FormControl variant="outlined" fullWidth>
+          <FormControl variant="outlined" fullWidth required>
             <InputLabel>Port</InputLabel>
             <Select
               value={transportData.port}
@@ -341,15 +307,19 @@ export default function TransportBookingForm() {
             value={transportData.company}
             onChange={(e) => handleInputChange("company", e.target.value)}
             fullWidth
+            required
           />
-          <TextField
-            type="number"
-            label="Transport Amount (Yen)"
-            variant="outlined"
-            value={transportData.transportAmount}
-            onChange={(e) => handleInputChange("transportAmount", e.target.value)}
-            fullWidth
-          />
+          <FormControl variant="outlined" fullWidth>
+            <InputLabel>Payment Status</InputLabel>
+            <Select
+              value={transportData.paymentStatus}
+              onChange={(e) => handleInputChange("paymentStatus", e.target.value)}
+              label="Payment Status"
+            >
+              <MenuItem value="UnPaid">UnPaid</MenuItem>
+              <MenuItem value="Paid">Paid</MenuItem>
+            </Select>
+          </FormControl>
         </Box>
         <Box mt={2}>
           <TextField
@@ -369,37 +339,6 @@ export default function TransportBookingForm() {
               />
             </Box>
           )}
-        </Box>
-        {/* Invoice Totals */}
-        <Box mt={2} display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
-          <TextField
-            label="Transport Amount (Yen)"
-            variant="outlined"
-            value={totalAmountYen.toFixed(2)}
-            InputProps={{ readOnly: true }}
-            fullWidth
-          />
-          <TextField
-            label="10% Add (Yen)"
-            variant="outlined"
-            value={tenPercentAdd.toFixed(2)}
-            InputProps={{ readOnly: true }}
-            fullWidth
-          />
-          <TextField
-            label="Grand Total (Yen)"
-            variant="outlined"
-            value={totalAmount.toFixed(2)}
-            InputProps={{ readOnly: true }}
-            fullWidth
-          />
-          <TextField
-            label="Grand Total (USD)"
-            variant="outlined"
-            value={totalDollars.toFixed(2)}
-            InputProps={{ readOnly: true }}
-            fullWidth
-          />
         </Box>
       </Paper>
 
@@ -427,7 +366,7 @@ export default function TransportBookingForm() {
                 {...props}
                 sx={{
                   backgroundColor:
-                    vehicle.status === "Pending" ? "#e8f5e9" : "#ffebee", // Green for Pending, Red for others
+                    vehicle.status === "Pending" ? "#e8f5e9" : "#ffebee",
                 }}
               >
                 <ListItemText
@@ -467,7 +406,7 @@ export default function TransportBookingForm() {
             <Box display="grid" gridTemplateColumns="1fr 1fr 1fr 1fr" gap={2} sx={{ fontWeight: "bold", mb: 1 }}>
               <Typography variant="body1">Vehicle ID</Typography>
               <Typography variant="body1">Chassis No</Typography>
-              <Typography variant="body1">Share of Total (USD)</Typography>
+              <Typography variant="body1">Amount (Yen)</Typography>
               <Typography variant="body1">Action</Typography>
             </Box>
             {/* Grid Rows */}
@@ -484,23 +423,47 @@ export default function TransportBookingForm() {
                 <Typography variant="body1">{vehicle.chassisNo}</Typography>
                 <TextField
                   type="number"
-                  label="Share of Total (USD)"
+                  label="Amount (Yen)"
                   variant="outlined"
-                  value={vehicle.totaldollers || ""}
+                  value={vehicle.v_amount || ""}
                   onChange={(e) => handleVehicleAmountChange(index, e.target.value)}
                   fullWidth
                   inputProps={{ min: 0, step: "0.01" }}
+                  required
                 />
-                <Button
-                  variant="contained"
+                <IconButton
                   color="error"
                   onClick={() => removeVehicle(index)}
-                  startIcon={<TrashIcon />}
+                  aria-label="remove vehicle"
                 >
-                  Remove
-                </Button>
+                  <TrashIcon />
+                </IconButton>
               </Box>
             ))}
+            {/* Totals Section (Aligned in Single Line) */}
+            <Box mt={3} display="flex" gap={2} alignItems="center">
+              <TextField
+                label="10% Add (Yen)"
+                variant="outlined"
+                value={tenPercentAdd.toFixed(2)}
+                InputProps={{ readOnly: true }}
+                sx={{ width: "150px" }}
+              />
+              <TextField
+                label="Grand Total (Yen)"
+                variant="outlined"
+                value={grandTotalYen.toFixed(2)}
+                InputProps={{ readOnly: true }}
+                sx={{ width: "150px" }}
+              />
+              <TextField
+                label="Grand Total (USD)"
+                variant="outlined"
+                value={grandTotalDollars.toFixed(2)}
+                InputProps={{ readOnly: true }}
+                sx={{ width: "150px" }}
+              />
+            </Box>
           </Box>
         )}
       </Paper>

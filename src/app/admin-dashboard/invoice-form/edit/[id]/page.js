@@ -458,7 +458,7 @@ export default function NewBookingForm({ invoiceId = null }) {
   return (
     <Box sx={{ p: 2, bgcolor: "#FFFFFF" }}>
       <Typography variant="h4" gutterBottom>
-        {invoiceId ? "Edit Invoice" : "New Vehicle Booking"}
+        {invoiceId ? "Edit Invoice" : "Edit Vehicle Booking"}
       </Typography>
 
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>

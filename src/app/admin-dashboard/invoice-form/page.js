@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ClipLoader } from "react-spinners";
 import {
   TextField,
@@ -18,6 +19,11 @@ import {
   IconButton,
   Box,
   Typography,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Tooltip,
 } from "@mui/material";
 import { Close as CloseIcon, Upload as UploadIcon } from "@mui/icons-material";
 
@@ -28,30 +34,36 @@ const InvoicesList = () => {
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [exchangeRate, setExchangeRate] = useState(null);
   const itemsPerPage = 5;
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [editedInvoice, setEditedInvoice] = useState(null);
   const [newImage, setNewImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
-  const [isImageUploading, setIsImageUploading] = useState(false); // Loading state for image upload
+  const [isImageUploading, setIsImageUploading] = useState(false);
+  const [isSaveButtonDisabled, setIsSaveButtonDisabled] = useState(false);
+  const [isSaving, setIsSaving] = useState(false); // New state for save loading
+  const router = useRouter();
+
+  useEffect(() => {
+    const fetchExchangeRate = async () => {
+      const data = await getCurrencies();
+      if (data && data.conversion_rate) {
+        setExchangeRate(data.conversion_rate);
+      } else {
+        setError("Failed to load exchange rate");
+      }
+    };
+    fetchExchangeRate();
+  }, []);
 
   useEffect(() => {
     const fetchInvoices = async () => {
       try {
-        console.log("Fetching invoices from API...");
         const response = await fetch("/api/admin/invoice-management");
-        console.log("Response status:", response.status);
-
-        if (!response.ok) {
-          throw new Error(`Failed to fetch invoices: ${response.statusText}`);
-        }
-
+        if (!response.ok) throw new Error(`Failed to fetch invoices: ${response.statusText}`);
         const result = await response.json();
-        console.log("API response:", result);
-
         const fetchedInvoices = result.data || [];
-        console.log("Fetched invoices:", fetchedInvoices);
-
-        // Normalize field names to match component expectations
         const normalizedInvoices = fetchedInvoices.map((invoice) => ({
           ...invoice,
           createdAt: invoice.createdAt || invoice.created_at,
@@ -64,13 +76,11 @@ const InvoicesList = () => {
         setInvoices(normalizedInvoices);
         setFilteredInvoices(normalizedInvoices);
       } catch (err) {
-        console.error("Fetch error:", err);
         setError(err.message);
       } finally {
         setLoading(false);
       }
     };
-
     fetchInvoices();
   }, []);
 
@@ -82,6 +92,42 @@ const InvoicesList = () => {
     setFilteredInvoices(filtered);
     setCurrentPage(1);
   }, [searchQuery, invoices]);
+
+  const calculateVehicleTotals = (vehicle) => {
+    const fieldsToSum = [
+      "auction_amount",
+      "tenPercentAdd",
+      "recycleAmount",
+      "bidAmount",
+      "bidAmount10per",
+      "commissionAmount",
+      "numberPlateTax",
+    ];
+    const totalYen = fieldsToSum.reduce((sum, field) => {
+      return sum + (parseFloat(vehicle[field]) || 0);
+    }, 0);
+    const totalUSD = exchangeRate ? (totalYen * exchangeRate).toFixed(2) : 0;
+    return { totalYen, totalUSD };
+  };
+
+  useEffect(() => {
+    if (editedInvoice && editedInvoice.vehicles) {
+      const updatedVehicles = editedInvoice.vehicles.map((vehicle) => {
+        const { totalYen, totalUSD } = calculateVehicleTotals(vehicle);
+        return {
+          ...vehicle,
+          totalAmount_yen: totalYen,
+          totalAmount_dollers: totalUSD,
+        };
+      });
+      setEditedInvoice((prev) => ({
+        ...prev,
+        vehicles: updatedVehicles,
+        amountYen: updatedVehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_yen) || 0), 0),
+        amountDoller: updatedVehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_dollers) || 0), 0),
+      }));
+    }
+  }, [editedInvoice?.vehicles, exchangeRate]);
 
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const paginatedInvoices = filteredInvoices.slice(
@@ -99,30 +145,17 @@ const InvoicesList = () => {
   };
 
   const uploadImageToServer = async (base64Image) => {
-    console.log("Attempting to upload image to:", process.env.NEXT_PUBLIC_IMAGE_UPLOAD_API);
-    console.log("Base64 Image Length:", base64Image.length);
-
     try {
       const response = await fetch(process.env.NEXT_PUBLIC_IMAGE_UPLOAD_API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image: base64Image }),
       });
-      console.log("Server response status:", response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Server error response:", errorText);
-        throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
-      }
-
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
-      console.log("Server response data:", data);
-
       if (!data.image_url) throw new Error("No image URL returned from server");
       return `${process.env.NEXT_PUBLIC_IMAGE_UPLOAD_PATH}/${data.image_url}`;
     } catch (error) {
-      console.error("Image upload error details:", error);
       throw new Error(`Image upload failed: ${error.message}`);
     }
   };
@@ -137,33 +170,17 @@ const InvoicesList = () => {
 
   const saveImage = async () => {
     if (!selectedInvoice || !newImage) return;
-
     try {
-      setIsImageUploading(true); // Start loading state
-
-      // Convert the new image to base64 and upload it
+      setIsImageUploading(true);
       const base64Image = await convertToBase64(newImage);
       const imagePath = await uploadImageToServer(base64Image);
-
-      if (!imagePath) throw new Error("Failed to upload new image");
-
-      // Update the invoice with the new image path
       const response = await fetch(`/api/admin/invoice-management/${selectedInvoice.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imagePath }),
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Update response error:", errorText);
-        throw new Error(`Failed to update image: ${response.statusText}, ${errorText}`);
-      }
-
+      if (!response.ok) throw new Error(`Failed to update image: ${response.statusText}`);
       const updatedInvoice = await response.json();
-      console.log("Updated invoice with new image:", updatedInvoice);
-
-      // Update the local state with the new image path
       setInvoices((prev) =>
         prev.map((inv) => (inv.id === selectedInvoice.id ? { ...inv, imagePath } : inv))
       );
@@ -171,50 +188,97 @@ const InvoicesList = () => {
         prev.map((inv) => (inv.id === selectedInvoice.id ? { ...inv, imagePath } : inv))
       );
       setSelectedInvoice((prev) => ({ ...prev, imagePath }));
+      setEditedInvoice((prev) => ({ ...prev, imagePath }));
       setNewImage(null);
       setImagePreview(null);
       alert("Image updated successfully!");
     } catch (err) {
-      console.error("Error updating image:", err);
       alert(`Failed to update image: ${err.message}`);
     } finally {
-      setIsImageUploading(false); // Stop loading state
+      setIsImageUploading(false);
     }
   };
+
+  const handleEditChange = (field, value) => {
+    setEditedInvoice((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleVehicleEditChange = (vehicleIndex, field, value) => {
+    setEditedInvoice((prev) => {
+      const updatedVehicles = [...prev.vehicles];
+      updatedVehicles[vehicleIndex] = { ...updatedVehicles[vehicleIndex], [field]: value };
+      return { ...prev, vehicles: updatedVehicles };
+    });
+  };
+
+  const saveEditedInvoice = async () => {
+    try {
+      setIsSaving(true); // Start loading
+      const response = await fetch(`/api/admin/invoice-management/${selectedInvoice.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editedInvoice),
+      });
+      if (!response.ok) throw new Error(`Failed to update invoice: ${response.statusText}`);
+      const updatedInvoice = await response.json();
+      setInvoices((prev) =>
+        prev.map((inv) => (inv.id === selectedInvoice.id ? updatedInvoice.data : inv))
+      );
+      setFilteredInvoices((prev) =>
+        prev.map((inv) => (inv.id === selectedInvoice.id ? updatedInvoice.data : inv))
+      );
+      setSelectedInvoice(updatedInvoice.data);
+      alert("Invoice updated successfully!");
+    } catch (err) {
+      alert(`Failed to update invoice: ${err.message}`);
+    } finally {
+      setIsSaving(false); // Stop loading
+    }
+  };
+
+  async function getCurrencies() {
+    try {
+      const response = await fetch(
+        `https://v6.exchangerate-api.com/v6/${process.env.NEXT_PUBLIC_EXCHANGE_RATE_API_KEY}/pair/JPY/USD`
+      );
+      if (!response.ok) {
+        throw new Error("Failed to fetch currency data");
+      }
+      const data = await response.json();
+      console.log("Currency pair data:", data);
+      return data;
+    } catch (error) {
+      console.error("Error fetching currencies:", error);
+      return null;
+    }
+  }
 
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" height="64vh">
         <Box textAlign="center">
           <ClipLoader color="#3b82f6" size={50} />
-          <Typography variant="body1" sx={{ mt: 2 }}>
-            Loading invoices...
-          </Typography>
+          <Typography variant="body1" sx={{ mt: 2 }}>Loading invoices...</Typography>
         </Box>
       </Box>
     );
   }
   if (error) {
-    return (
-      <Typography variant="body1" color="error" align="center">
-        {error}
-      </Typography>
-    );
+    return <Typography variant="body1" color="error" align="center">{error}</Typography>;
   }
 
   return (
     <Paper sx={{ maxWidth: "1200px", mx: "auto", p: 3 }}>
-      <Typography variant="h5" gutterBottom>
-        Invoices List
-      </Typography>
-
-      <Box mb={2} position="relative">
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+        <Typography variant="h5" sx={{ flexShrink: 0, mr: 2 }}>
+          Invoices List
+        </Typography>
         <TextField
           label="Search by Invoice Number or Auction House"
           variant="outlined"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          fullWidth
+          sx={{ flexGrow: 1 }}
           InputProps={{
             endAdornment: searchQuery && (
               <IconButton onClick={() => setSearchQuery("")} edge="end">
@@ -257,20 +321,21 @@ const InvoicesList = () => {
                       size="small"
                       onClick={() => {
                         setSelectedInvoice(invoice);
+                        setEditedInvoice({ ...invoice });
                         setNewImage(null);
                         setImagePreview(null);
+                        setIsSaveButtonDisabled(invoice.status === "PAID");
                       }}
+                      sx={{ mr: 1 }}
                     >
-                      View
+                      View/Edit
                     </Button>
                   </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} align="center">
-                  No invoices found.
-                </TableCell>
+                <TableCell colSpan={7} align="center">No invoices found.</TableCell>
               </TableRow>
             )}
           </TableBody>
@@ -313,7 +378,7 @@ const InvoicesList = () => {
         PaperProps={{ sx: { maxHeight: "85vh" } }}
       >
         <DialogTitle>
-          Invoice Details
+          Invoice Details (Editable)
           <IconButton
             aria-label="close"
             onClick={() => setSelectedInvoice(null)}
@@ -323,51 +388,86 @@ const InvoicesList = () => {
           </IconButton>
         </DialogTitle>
         <DialogContent dividers>
-          {selectedInvoice && (
+          {selectedInvoice && editedInvoice && (
             <Box>
               <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2} mb={4}>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Invoice ID</Typography>
-                  <Typography variant="body1">{selectedInvoice.id}</Typography>
+                  <Typography variant="body1">{editedInvoice.id}</Typography>
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Date</Typography>
-                  <Typography variant="body1">{new Date(selectedInvoice.date).toLocaleDateString()}</Typography>
+                  <TextField
+                    type="date"
+                    value={editedInvoice.date.split("T")[0]}
+                    onChange={(e) => handleEditChange("date", e.target.value)}
+                    fullWidth
+                    InputLabelProps={{ shrink: true }}
+                  />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Number</Typography>
-                  <Typography variant="body1">{selectedInvoice.number}</Typography>
+                  <TextField
+                    value={editedInvoice.number}
+                    onChange={(e) => handleEditChange("number", e.target.value)}
+                    fullWidth
+                  />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Amount (USD)</Typography>
-                  <Typography variant="body1">${(selectedInvoice.amountDoller || 0).toFixed(2)}</Typography>
+                  <TextField
+                    type="number"
+                    value={editedInvoice.amountDoller || ""}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Amount (Yen)</Typography>
-                  <Typography variant="body1">{selectedInvoice.amountYen || 'N/A'}</Typography>
+                  <TextField
+                    type="number"
+                    value={editedInvoice.amountYen || ""}
+                    InputProps={{ readOnly: true }}
+                    fullWidth
+                  />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Auction House</Typography>
-                  <Typography variant="body1">{selectedInvoice.auctionHouse}</Typography>
+                  <TextField
+                    value={editedInvoice.auctionHouse}
+                    onChange={(e) => handleEditChange("auctionHouse", e.target.value)}
+                    fullWidth
+                  />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Added By</Typography>
-                  <Typography variant="body1">{selectedInvoice.added_by || 'N/A'}</Typography>
+                  <TextField
+                    type="number"
+                    value={editedInvoice.added_by}
+                    onChange={(e) => handleEditChange("added_by", parseInt(e.target.value) || 0)}
+                    fullWidth
+                  />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Created At</Typography>
-                  <Typography variant="body1">{new Date(selectedInvoice.createdAt).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                  <Typography variant="body1">{new Date(selectedInvoice.updatedAt).toLocaleString()}</Typography>
+                  <Typography variant="caption" color="textSecondary">Status</Typography>
+                  <FormControl fullWidth>
+                    <InputLabel>Status</InputLabel>
+                    <Select
+                      value={editedInvoice.status}
+                      onChange={(e) => handleEditChange("status", e.target.value)}
+                      label="Status"
+                    >
+                      <MenuItem value="PAID">PAID</MenuItem>
+                      <MenuItem value="UNPAID">UNPAID</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Invoice Image</Typography>
-                  {selectedInvoice.imagePath ? (
-                    <a href={selectedInvoice.imagePath} download={`invoice-${selectedInvoice.id}.png`}>
+                  {editedInvoice.imagePath ? (
+                    <a href={editedInvoice.imagePath} download={`invoice-${editedInvoice.id}.png`}>
                       <img
-                        src={selectedInvoice.imagePath}
+                        src={editedInvoice.imagePath}
                         alt="Invoice"
                         style={{ width: 100, height: 100, objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
                       />
@@ -384,15 +484,10 @@ const InvoicesList = () => {
                       component="label"
                       startIcon={<UploadIcon />}
                       sx={{ mr: 1 }}
-                      disabled={isImageUploading} // Disable button while uploading
+                      disabled={isImageUploading}
                     >
                       {isImageUploading ? "Uploading..." : "Upload New Image"}
-                      <input
-                        type="file"
-                        hidden
-                        accept="image/*"
-                        onChange={handleImageChange}
-                      />
+                      <input type="file" hidden accept="image/*" onChange={handleImageChange} />
                     </Button>
                     {imagePreview && (
                       <Box mt={1} display="flex" alignItems="center" gap={2}>
@@ -405,13 +500,9 @@ const InvoicesList = () => {
                           variant="contained"
                           color="primary"
                           onClick={saveImage}
-                          disabled={isImageUploading} // Disable button while uploading
+                          disabled={isImageUploading}
                         >
-                          {isImageUploading ? (
-                            <ClipLoader color="#ffffff" size={20} />
-                          ) : (
-                            "Save Image"
-                          )}
+                          {isImageUploading ? <ClipLoader color="#ffffff" size={20} /> : "Save Image"}
                         </Button>
                       </Box>
                     )}
@@ -419,120 +510,240 @@ const InvoicesList = () => {
                 </Paper>
               </Box>
 
-              {selectedInvoice.vehicles && selectedInvoice.vehicles.length > 0 && (
+              {editedInvoice.vehicles && editedInvoice.vehicles.length > 0 && (
                 <Box mt={4}>
                   <Typography variant="h6" gutterBottom>Vehicle Details</Typography>
-                  {selectedInvoice.vehicles.map((vehicle, idx) => (
+                  {editedInvoice.vehicles.map((vehicle, idx) => (
                     <Paper key={vehicle.id} elevation={1} sx={{ p: 2, mb: 2 }}>
                       <Typography variant="subtitle1" gutterBottom>Vehicle #{idx + 1}</Typography>
                       <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Chassis No</Typography>
-                          <Typography variant="body1">{vehicle.chassisNo || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.chassisNo || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "chassisNo", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Maker</Typography>
-                          <Typography variant="body1">{vehicle.maker || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.maker || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "maker", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Year</Typography>
-                          <Typography variant="body1">{vehicle.year || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.year || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "year", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Color</Typography>
-                          <Typography variant="body1">{vehicle.color || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.color || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "color", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Engine Type</Typography>
-                          <Typography variant="body1">{vehicle.engineType || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.engineType || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "engineType", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Auction Amount</Typography>
-                          <Typography variant="body1">{vehicle.auction_amount || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.auction_amount || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "auction_amount", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">10% Add</Typography>
-                          <Typography variant="body1">{vehicle.tenPercentAdd || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.tenPercentAdd || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "tenPercentAdd", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Recycle Amount</Typography>
-                          <Typography variant="body1">{vehicle.recycleAmount || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.recycleAmount || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "recycleAmount", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Auction House</Typography>
-                          <Typography variant="body1">{vehicle.auction_house || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.auction_house || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "auction_house", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Bid Amount</Typography>
-                          <Typography variant="body1">{vehicle.bidAmount || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.bidAmount || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "bidAmount", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Bid Amount 10%</Typography>
-                          <Typography variant="body1">{vehicle.bidAmount10per || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.bidAmount10per || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "bidAmount10per", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Commission Amount</Typography>
-                          <Typography variant="body1">{vehicle.commissionAmount || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.commissionAmount || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "commissionAmount", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Number Plate Tax</Typography>
-                          <Typography variant="body1">{vehicle.numberPlateTax || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.numberPlateTax || "0"}
+                            onChange={(e) => handleVehicleEditChange(idx, "numberPlateTax", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Repair Charges</Typography>
-                          <Typography variant="body1">{vehicle.repairCharges || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.repairCharges || "0"}
+                            onChange={(e) => handleVehicleEditChange(idx, "repairCharges", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Total Amount (Yen)</Typography>
-                          <Typography variant="body1">{vehicle.totalAmount_yen || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.totalAmount_yen || ""}
+                            InputProps={{ readOnly: true }}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Total Amount (USD)</Typography>
-                          <Typography variant="body1">{vehicle.totalAmount_dollers || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.totalAmount_dollers || ""}
+                            InputProps={{ readOnly: true }}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Sending Port</Typography>
-                          <Typography variant="body1">{vehicle.seaPort?.name || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.seaPort?.name || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "seaPort", { name: e.target.value })}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Additional Amount</Typography>
-                          <Typography variant="body1">{vehicle.additionalAmount || 'N/A'}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.additionalAmount || "0"}
+                            onChange={(e) => handleVehicleEditChange(idx, "additionalAmount", parseFloat(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Document Required</Typography>
-                          <Typography variant="body1">{vehicle.isDocumentRequired === 'yes' ? 'Yes' : 'No' || 'N/A'}</Typography>
+                          <FormControl fullWidth>
+                            <InputLabel>Document Required</InputLabel>
+                            <Select
+                              value={vehicle.isDocumentRequired || ""}
+                              onChange={(e) => handleVehicleEditChange(idx, "isDocumentRequired", e.target.value)}
+                              label="Document Required"
+                            >
+                              <MenuItem value="yes">Yes</MenuItem>
+                              <MenuItem value="no">No</MenuItem>
+                            </Select>
+                          </FormControl>
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Document Receive Date</Typography>
-                          <Typography variant="body1">{vehicle.documentReceiveDate ? new Date(vehicle.documentReceiveDate).toLocaleString() : 'N/A'}</Typography>
+                          <TextField
+                            type="datetime-local"
+                            value={vehicle.documentReceiveDate ? vehicle.documentReceiveDate.split(".")[0] : ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "documentReceiveDate", e.target.value)}
+                            fullWidth
+                            InputLabelProps={{ shrink: true }}
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Ownership</Typography>
-                          <Typography variant="body1">{vehicle.isOwnership === 'yes' ? 'Yes' : 'No' || 'N/A'}</Typography>
+                          <FormControl fullWidth>
+                            <InputLabel>Ownership</InputLabel>
+                            <Select
+                              value={vehicle.isOwnership || ""}
+                              onChange={(e) => handleVehicleEditChange(idx, "isOwnership", e.target.value)}
+                              label="Ownership"
+                            >
+                              <MenuItem value="yes">Yes</MenuItem>
+                              <MenuItem value="no">No</MenuItem>
+                            </Select>
+                          </FormControl>
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Ownership Date</Typography>
-                          <Typography variant="body1">{vehicle.ownershipDate ? new Date(vehicle.ownershipDate).toLocaleString() : 'N/A'}</Typography>
+                          <TextField
+                            type="datetime-local"
+                            value={vehicle.ownershipDate ? vehicle.ownershipDate.split(".")[0] : ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "ownershipDate", e.target.value)}
+                            fullWidth
+                            InputLabelProps={{ shrink: true }}
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Status</Typography>
-                          <Typography variant="body1">{vehicle.status || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.status || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "status", e.target.value)}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Admin</Typography>
-                          <Typography variant="body1">{vehicle.admin?.fullname || 'N/A'}</Typography>
+                          <TextField
+                            value={vehicle.admin?.fullname || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "admin", { fullname: e.target.value })}
+                            fullWidth
+                          />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Added By</Typography>
-                          <Typography variant="body1">{vehicle.added_by || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Created At</Typography>
-                          <Typography variant="body1">{new Date(vehicle.createdAt).toLocaleString()}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                          <Typography variant="body1">{new Date(vehicle.updatedAt).toLocaleString()}</Typography>
+                          <TextField
+                            type="number"
+                            value={vehicle.added_by || ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "added_by", parseInt(e.target.value) || 0)}
+                            fullWidth
+                          />
                         </Box>
                         {vehicle.vehicleImages && vehicle.vehicleImages.length > 0 ? (
                           <Box sx={{ gridColumn: "span 4" }}>
@@ -571,10 +782,26 @@ const InvoicesList = () => {
           )}
         </DialogContent>
         <DialogActions>
+          <Tooltip
+            title={isSaveButtonDisabled ? "Cannot save changes for paid invoices" : ""}
+            placement="top"
+          >
+            <span>
+              <Button
+                variant="contained"
+                color="success"
+                onClick={saveEditedInvoice}
+                disabled={isImageUploading || isSaveButtonDisabled || isSaving} // Disable during saving
+              >
+                {isSaving ? <ClipLoader color="#ffffff" size={20} /> : "Save Changes"}
+              </Button>
+            </span>
+          </Tooltip>
           <Button
             variant="contained"
             color="error"
             onClick={() => setSelectedInvoice(null)}
+            disabled={isSaving} // Optionally disable the Close button during saving
           >
             Close
           </Button>
