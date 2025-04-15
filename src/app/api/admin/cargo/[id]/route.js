@@ -213,53 +213,6 @@ export async function PUT(request) {
   }
 }
 
-export async function GET(request) {
-  try {
-    const cargoBookings = await prisma.containerBooking.findMany({
-      include: {
-        containerDetails: true,
-      },
-    });
-
-    const containerItemDetails = await prisma.containerItemDetail.findMany({
-      include: {
-        vehicle: true,
-      },
-    });
-
-    const cargoBookingsWithItems = cargoBookings.map((booking) => {
-      const relatedItems = containerItemDetails.filter((item) =>
-        booking.containerDetails.some((detail) => detail.id === item.containerDetailId)
-      );
-      return {
-        ...booking,
-        containerItemDetails: relatedItems,
-      };
-    });
-
-    console.log("Fetched cargo bookings with joined data:", cargoBookingsWithItems);
-
-    return NextResponse.json(
-      {
-        message: "Cargo bookings fetched successfully",
-        status: true,
-        data: cargoBookingsWithItems,
-      },
-      { status: 200 }
-    );
-  } catch (error) {
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        status: false,
-        details: error.message || "Unknown error occurred",
-      },
-      { status: 500 }
-    );
-  } finally {
-    await prisma.$disconnect();
-  }
-}
 
 
 // export async function GET(request) {
