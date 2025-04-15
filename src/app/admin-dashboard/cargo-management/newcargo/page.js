@@ -19,10 +19,10 @@ import { Plus, Trash } from "lucide-react";
 import { useSelector } from "react-redux";
 
 export default function NewCargoBooking() {
-  const [allVehicles, setAllVehicles] = useState([]); // Store all vehicles for dropdown
-  const [selectedVehicles, setSelectedVehicles] = useState({}); // Track selected vehicle for each container
+  const [allVehicles, setAllVehicles] = useState([]);
+  const [selectedVehicles, setSelectedVehicles] = useState({});
   const [seaPorts, setSeaPorts] = useState([]);
-  const [exchangeRate, setExchangeRate] = useState(0.0067); // Default JPY to USD rate
+  const [exchangeRate, setExchangeRate] = useState(0.0067);
   const [cargoData, setCargoData] = useState({
     actualShipper: "",
     cyOpen: "",
@@ -37,7 +37,7 @@ export default function NewCargoBooking() {
     portOfDischarge: "",
     cargoMode: "",
     placeOfIssue: "",
-    freightTerm: "pre paid", // Default value
+    freightTerm: "pre paid",
     shipperName: "",
     consignee: "",
     descriptionOfGoods: "",
@@ -46,7 +46,10 @@ export default function NewCargoBooking() {
     surrender_fee: 0,
     bl_fee: 0,
     radiation_fee: 0,
-    booking_service_charges: 0, // New field
+    booking_service_charges: 0,
+    other_amount: 0,
+    paid_status: "UnPaid",
+    comments: "",
     totalAmount1: 0,
     totalAmount1_dollars: 0,
     freight_amount: 0,
@@ -56,7 +59,7 @@ export default function NewCargoBooking() {
     imagePath: "",
     added_by: 0,
     admin_id: 0,
-    containerDetails: [], // Array of container details based on volume
+    containerDetails: [],
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -65,7 +68,6 @@ export default function NewCargoBooking() {
   const username = useSelector((state) => state.user.username);
   const userid = useSelector((state) => state.user.id);
 
-  // Fetch exchange rate
   useEffect(() => {
     const fetchExchangeRate = async () => {
       try {
@@ -82,7 +84,6 @@ export default function NewCargoBooking() {
     fetchExchangeRate();
   }, []);
 
-  // Fetch all vehicles with status "Transport" or "Inspection"
   useEffect(() => {
     const fetchVehicles = async () => {
       try {
@@ -97,7 +98,6 @@ export default function NewCargoBooking() {
           throw new Error("Vehicles data is not an array");
         }
 
-        // Filter vehicles with status "Transport" or "Inspection"
         const filteredVehicles = vehiclesArray
           .filter((vehicle) => vehicle.status === "Transport" || vehicle.status === "Inspection")
           .map((vehicle) => ({
@@ -121,7 +121,6 @@ export default function NewCargoBooking() {
     fetchVehicles();
   }, []);
 
-  // Fetch sea ports
   useEffect(() => {
     const fetchSeaPorts = async () => {
       try {
@@ -136,7 +135,6 @@ export default function NewCargoBooking() {
     fetchSeaPorts();
   }, []);
 
-  // Initialize containerDetails and admin_id only when userid changes
   useEffect(() => {
     setCargoData((prev) => {
       const volume = parseInt(prev.volume) || 0;
@@ -162,7 +160,6 @@ export default function NewCargoBooking() {
     setSelectedVehicles({});
   }, [userid]);
 
-  // Update containerDetails when volume changes
   useEffect(() => {
     setCargoData((prev) => {
       const volume = parseInt(prev.volume) || 0;
@@ -170,7 +167,6 @@ export default function NewCargoBooking() {
       let newContainerDetails = [...prev.containerDetails];
 
       if (volume > currentLength) {
-        // Add new containers
         newContainerDetails = [
           ...newContainerDetails,
           ...Array.from({ length: volume - currentLength }, (_, i) => ({
@@ -187,7 +183,6 @@ export default function NewCargoBooking() {
           })),
         ];
       } else if (volume < currentLength) {
-        // Remove excess containers
         newContainerDetails = newContainerDetails.slice(0, volume);
       }
 
@@ -198,7 +193,6 @@ export default function NewCargoBooking() {
     });
   }, [cargoData.volume, userid]);
 
-  // Calculate totals and distribute amount based on freightTerm
   useEffect(() => {
     const freightAmount = parseFloat(cargoData.freight_amount) || 0;
     const vanning = parseFloat(cargoData.vanning_charges) || 0;
@@ -207,10 +201,19 @@ export default function NewCargoBooking() {
     const bl = parseFloat(cargoData.bl_fee) || 0;
     const radiation = parseFloat(cargoData.radiation_fee) || 0;
     const bookingServiceCharges = parseFloat(cargoData.booking_service_charges) || 0;
+    const otherAmount = parseFloat(cargoData.other_amount) || 0;
 
-    const netTotalAmount = freightAmount + vanning + seal + surrender + bl + radiation + bookingServiceCharges;
+    const netTotalAmount =
+      freightAmount +
+      vanning +
+      seal +
+      surrender +
+      bl +
+      radiation +
+      bookingServiceCharges +
+      otherAmount;
     const netTotalDollars = netTotalAmount * exchangeRate;
-    const totalAmount1 = freightAmount; // Assuming totalAmount1 is freight only in Yen
+    const totalAmount1 = freightAmount;
     const totalAmount1Dollars = totalAmount1 * exchangeRate;
 
     const totalVehicles = cargoData.containerDetails.reduce(
@@ -218,14 +221,14 @@ export default function NewCargoBooking() {
       0
     );
 
-    // Calculate amount per vehicle based on freightTerm
     let amountPerVehicle = 0;
     if (cargoData.freightTerm === "pre paid" && totalVehicles > 0) {
-      amountPerVehicle = netTotalDollars / totalVehicles; // Include freight in total
+      amountPerVehicle = netTotalDollars / totalVehicles;
     } else if (cargoData.freightTerm === "collect" && totalVehicles > 0) {
-      const otherCharges = vanning + seal + surrender + bl + radiation + bookingServiceCharges;
+      const otherCharges =
+        vanning + seal + surrender + bl + radiation + bookingServiceCharges + otherAmount;
       const otherChargesDollars = otherCharges * exchangeRate;
-      amountPerVehicle = otherChargesDollars / totalVehicles; // Exclude freight
+      amountPerVehicle = otherChargesDollars / totalVehicles;
     }
 
     setCargoData((prev) => {
@@ -241,7 +244,7 @@ export default function NewCargoBooking() {
         prev.totalAmount1_dollars === totalAmount1Dollars &&
         !shouldUpdateItems
       ) {
-        return prev; // No update needed
+        return prev;
       }
 
       return {
@@ -270,7 +273,8 @@ export default function NewCargoBooking() {
     cargoData.bl_fee,
     cargoData.radiation_fee,
     cargoData.booking_service_charges,
-    cargoData.freightTerm, // Added to trigger recalculation when freightTerm changes
+    cargoData.other_amount,
+    cargoData.freightTerm,
     exchangeRate,
     cargoData.containerDetails,
   ]);
@@ -290,7 +294,6 @@ export default function NewCargoBooking() {
       return;
     }
 
-    // Check if vehicle is already added in any container
     const isAlreadyAdded = cargoData.containerDetails.some((container) =>
       container.containerItems.some((item) => item.vehicleId === vehicle.id)
     );
@@ -299,13 +302,11 @@ export default function NewCargoBooking() {
       return;
     }
 
-    // Add vehicle to container
     setCargoData((prev) => {
       const updatedContainers = [...prev.containerDetails];
       const containerItems = updatedContainers[containerIndex].containerItems;
       const newItemNo = containerItems.length + 1;
 
-      // Ensure the vehicle isn't already in the containerItems
       if (!containerItems.some((item) => item.vehicleId === vehicle.id)) {
         updatedContainers[containerIndex].containerItems.push({
           itemNo: newItemNo.toString(),
@@ -314,14 +315,13 @@ export default function NewCargoBooking() {
           year: vehicle.year.toString(),
           color: vehicle.color,
           cc: vehicle.engineType,
-          amount: 0, // Will be updated by useEffect
+          amount: 0,
         });
       }
 
       return { ...prev, containerDetails: updatedContainers };
     });
 
-    // Reset the selected vehicle for this container
     setSelectedVehicles((prev) => ({
       ...prev,
       [containerIndex]: null,
@@ -441,6 +441,9 @@ export default function NewCargoBooking() {
         bl_fee: parseFloat(cargoData.bl_fee) || 0,
         radiation_fee: parseFloat(cargoData.radiation_fee) || 0,
         booking_service_charges: parseFloat(cargoData.booking_service_charges) || 0,
+        other_amount: parseFloat(cargoData.other_amount) || 0,
+        paid_status: cargoData.paid_status || "UnPaid",
+        comments: cargoData.comments || "",
         totalAmount1: cargoData.totalAmount1,
         totalAmount1_dollars: cargoData.totalAmount1_dollars,
         freight_amount: cargoData.freight_amount,
@@ -511,6 +514,9 @@ export default function NewCargoBooking() {
         bl_fee: 0,
         radiation_fee: 0,
         booking_service_charges: 0,
+        other_amount: 0,
+        paid_status: "UnPaid",
+        comments: "",
         totalAmount1: 0,
         totalAmount1_dollars: 0,
         freight_amount: 0,
@@ -536,7 +542,6 @@ export default function NewCargoBooking() {
     <div className="flex flex-col bg-white w-full h-full rounded p-4">
       <h1 className="text-3xl font-bold mb-4">New Cargo Booking</h1>
 
-      {/* Cargo Booking Details */}
       <div className="p-4 border rounded-lg bg-white mb-4">
         <h2 className="text-xl font-semibold pb-2">Cargo Booking Details</h2>
         <div className="grid md:grid-cols-4 grid-cols-1 gap-4">
@@ -690,6 +695,17 @@ export default function NewCargoBooking() {
             onChange={(e) => handleInputChange("descriptionOfGoods", e.target.value)}
             fullWidth
           />
+          <FormControl fullWidth variant="outlined">
+            <InputLabel>Paid Status</InputLabel>
+            <Select
+              value={cargoData.paid_status}
+              onChange={(e) => handleInputChange("paid_status", e.target.value)}
+              label="Paid Status"
+            >
+              <MenuItem value="UnPaid">UnPaid</MenuItem>
+              <MenuItem value="Paid">Paid</MenuItem>
+            </Select>
+          </FormControl>
           <TextField
             type="number"
             label="Freight Amount (Yen)"
@@ -748,6 +764,14 @@ export default function NewCargoBooking() {
           />
           <TextField
             type="number"
+            label="Other Amount (Yen)"
+            variant="outlined"
+            value={cargoData.other_amount}
+            onChange={(e) => handleInputChange("other_amount", e.target.value)}
+            fullWidth
+          />
+          <TextField
+            type="number"
             label="Net Total Amount (Yen)"
             variant="outlined"
             value={cargoData.net_total_amount.toFixed(2)}
@@ -760,6 +784,15 @@ export default function NewCargoBooking() {
             variant="outlined"
             value={cargoData.net_total_amount_dollars.toFixed(2)}
             InputProps={{ readOnly: true }}
+            fullWidth
+          />
+          <TextField
+            label="Comments"
+            variant="outlined"
+            value={cargoData.comments}
+            onChange={(e) => handleInputChange("comments", e.target.value)}
+            multiline
+            rows={4}
             fullWidth
           />
           <div className="flex flex-col">
@@ -784,7 +817,6 @@ export default function NewCargoBooking() {
         </div>
       </div>
 
-      {/* Container Details */}
       {cargoData.containerDetails.map((container, index) => (
         <div key={index} className="p-4 border rounded-lg bg-white mb-4">
           <h2 className="text-xl font-semibold pb-2">Container {index + 1} Details</h2>
@@ -844,7 +876,6 @@ export default function NewCargoBooking() {
             </div>
           </div>
 
-          {/* Select Vehicle for this Container */}
           <div className="mt-4">
             <h3 className="text-lg font-semibold pb-2">
               Select Vehicle for Container {index + 1}
@@ -885,7 +916,6 @@ export default function NewCargoBooking() {
             {error && <p className="text-red-500 mt-2">{error}</p>}
           </div>
 
-          {/* Container Items */}
           <div className="mt-4">
             <h3 className="text-lg font-semibold pb-2">
               Container {index + 1} Items

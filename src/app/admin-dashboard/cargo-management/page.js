@@ -18,6 +18,10 @@ import {
   IconButton,
   Box,
   Typography,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import { Close as CloseIcon, OpenInNew as OpenInNewIcon, Download as DownloadIcon } from "@mui/icons-material";
 
@@ -31,6 +35,9 @@ const CargoList = () => {
   const itemsPerPage = 5;
   const [selectedCargo, setSelectedCargo] = useState(null);
   const [dialogLoading, setDialogLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({});
+  const [formErrors, setFormErrors] = useState({});
 
   // Fetch all cargo bookings on mount
   useEffect(() => {
@@ -68,7 +75,50 @@ const CargoList = () => {
     setCurrentPage(1);
   }, [searchQuery, cargoBookings]);
 
-  // Fetch detailed booking data when "View" is clicked
+  // Initialize formData when cargo is selected
+  useEffect(() => {
+    if (selectedCargo) {
+      setFormData({
+        bookingNo: selectedCargo.bookingNo || "",
+        shipperName: selectedCargo.shipperName || "",
+        consignee: selectedCargo.consignee || "",
+        actualShipper: selectedCargo.actualShipper || "",
+        cyOpen: selectedCargo.cyOpen || "",
+        etd: selectedCargo.etd ? new Date(selectedCargo.etd).toISOString().split("T")[0] : "",
+        cyCutOff: selectedCargo.cyCutOff ? new Date(selectedCargo.cyCutOff).toISOString().split("T")[0] : "",
+        eta: selectedCargo.eta ? new Date(selectedCargo.eta).toISOString().split("T")[0] : "",
+        volume: selectedCargo.volume || 0,
+        carrier: selectedCargo.carrier || "",
+        vessel: selectedCargo.vessel || "",
+        portOfLoading: selectedCargo.portOfLoading || "",
+        portOfDischarge: selectedCargo.portOfDischarge || "",
+        cargoMode: selectedCargo.cargoMode || "",
+        placeOfIssue: selectedCargo.placeOfIssue || "",
+        freightTerm: selectedCargo.freightTerm || "",
+        descriptionOfGoods: selectedCargo.descriptionOfGoods || "",
+        vanning_charges: selectedCargo.vanning_charges || 0,
+        seal_amount: selectedCargo.seal_amount || 0,
+        surrender_fee: selectedCargo.surrender_fee || 0,
+        bl_fee: selectedCargo.bl_fee || 0,
+        radiation_fee: selectedCargo.radiation_fee || 0,
+        booking_service_charges: selectedCargo.booking_service_charges || 0,
+        other_amount: selectedCargo.other_amount || 0,
+        paid_status: selectedCargo.paid_status || "UnPaid",
+        comments: selectedCargo.comments || "",
+        totalAmount1: selectedCargo.totalAmount1 || 0,
+        totalAmount1_dollars: selectedCargo.totalAmount1_dollars || 0,
+        freight_amount: selectedCargo.freight_amount || 0,
+        freight_amount_dollars: selectedCargo.freight_amount_dollars || 0,
+        net_total_amount: selectedCargo.net_total_amount || 0,
+        net_total_amount_dollars: selectedCargo.net_total_amount_dollars || 0,
+        imagePath: selectedCargo.imagePath || "",
+        added_by: selectedCargo.added_by || 0,
+      });
+      setFormErrors({});
+    }
+  }, [selectedCargo]);
+
+  // Fetch detailed booking data
   const fetchBookingDetails = async (id) => {
     setDialogLoading(true);
     try {
@@ -80,11 +130,122 @@ const CargoList = () => {
       if (result.status) {
         console.log("Fetched booking details:", result.data);
         setSelectedCargo(result.data);
+        setIsEditing(false);
       } else {
         throw new Error(result.error || "Failed to load booking details");
       }
     } catch (err) {
       console.error("Fetch details error:", err);
+      setError(err.message);
+    } finally {
+      setDialogLoading(false);
+    }
+  };
+
+  // Handle input changes
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    // Validate on change
+    let errors = { ...formErrors };
+    if (name === "bookingNo" && !value.trim()) {
+      errors.bookingNo = "Booking number is required";
+    } else if (name === "bookingNo") {
+      delete errors.bookingNo;
+    }
+    if (name === "other_amount" && value < 0) {
+      errors.other_amount = "Other amount cannot be negative";
+    } else if (name === "other_amount") {
+      delete errors.other_amount;
+    }
+    if (name === "paid_status" && !["Paid", "UnPaid"].includes(value)) {
+      errors.paid_status = "Invalid status";
+    } else if (name === "paid_status") {
+      delete errors.paid_status;
+    }
+    setFormErrors(errors);
+  };
+
+  // Handle form submission
+  const handleSave = async () => {
+    // Validate
+    let errors = {};
+    if (!formData.bookingNo.trim()) {
+      errors.bookingNo = "Booking number is required";
+    }
+    if (formData.other_amount < 0) {
+      errors.other_amount = "Other amount cannot be negative";
+    }
+    if (!["Paid", "UnPaid"].includes(formData.paid_status)) {
+      errors.paid_status = "Invalid status";
+    }
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    try {
+      setDialogLoading(true);
+      const response = await fetch(`/api/admin/cargo/${formData.bookingNo}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingNo: formData.bookingNo,
+          shipperName: formData.shipperName,
+          consignee: formData.consignee,
+          actualShipper: formData.actualShipper,
+          cyOpen: formData.cyOpen,
+          etd: formData.etd,
+          cyCutOff: formData.cyCutOff,
+          eta: formData.eta,
+          volume: parseInt(formData.volume) || 0,
+          carrier: formData.carrier,
+          vessel: formData.vessel,
+          portOfLoading: formData.portOfLoading,
+          portOfDischarge: formData.portOfDischarge,
+          cargoMode: formData.cargoMode,
+          placeOfIssue: formData.placeOfIssue,
+          freightTerm: formData.freightTerm,
+          descriptionOfGoods: formData.descriptionOfGoods,
+          vanning_charges: parseFloat(formData.vanning_charges) || 0,
+          seal_amount: parseFloat(formData.seal_amount) || 0,
+          surrender_fee: parseFloat(formData.surrender_fee) || 0,
+          bl_fee: parseFloat(formData.bl_fee) || 0,
+          radiation_fee: parseFloat(formData.radiation_fee) || 0,
+          booking_service_charges: parseFloat(formData.booking_service_charges) || 0,
+          other_amount: parseFloat(formData.other_amount) || 0,
+          paid_status: formData.paid_status,
+          comments: formData.comments || "",
+          totalAmount1: parseFloat(formData.totalAmount1) || 0,
+          totalAmount1_dollars: parseFloat(formData.totalAmount1_dollars) || 0,
+          freight_amount: parseFloat(formData.freight_amount) || 0,
+          freight_amount_dollars: parseFloat(formData.freight_amount_dollars) || 0,
+          net_total_amount: parseFloat(formData.net_total_amount) || 0,
+          net_total_amount_dollars: parseFloat(formData.net_total_amount_dollars) || 0,
+          imagePath: formData.imagePath,
+          added_by: parseInt(formData.added_by) || 0,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.status) {
+        throw new Error(result.error || "Failed to update booking");
+      }
+
+      // Update local state
+      const updatedCargo = result.data;
+      setCargoBookings((prev) =>
+        prev.map((cargo) => (cargo.bookingNo === updatedCargo.bookingNo ? updatedCargo : cargo))
+      );
+      setFilteredCargoBookings((prev) =>
+        prev.map((cargo) => (cargo.bookingNo === updatedCargo.bookingNo ? updatedCargo : cargo))
+      );
+      setSelectedCargo(updatedCargo);
+      setIsEditing(false);
+      alert("Booking updated successfully!");
+    } catch (err) {
+      console.error("Update error:", err);
       setError(err.message);
     } finally {
       setDialogLoading(false);
@@ -117,10 +278,23 @@ const CargoList = () => {
     }
   };
 
-  // Handle update action (placeholder for now)
-  const handleUpdate = (cargo) => {
-    console.log("Update clicked for:", cargo);
-    alert("Update functionality to be implemented!");
+  // Handle update toggle
+  const handleUpdate = () => {
+    setIsEditing(true);
+  };
+
+  // Handle cancel edit
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setFormErrors({});
+    setFormData((prev) => ({
+      ...prev,
+      ...selectedCargo,
+      etd: selectedCargo.etd ? new Date(selectedCargo.etd).toISOString().split("T")[0] : "",
+      cyCutOff: selectedCargo.cyCutOff ? new Date(selectedCargo.cyCutOff).toISOString().split("T")[0] : "",
+      eta: selectedCargo.eta ? new Date(selectedCargo.eta).toISOString().split("T")[0] : "",
+      comments: selectedCargo.comments || "",
+    }));
   };
 
   // Handle image download
@@ -143,9 +317,9 @@ const CargoList = () => {
   // Handle image load error
   const handleImageError = (e, section) => {
     console.error(`Image failed to load in ${section}:`, e.target.src);
-    e.target.style.display = "none"; // Hide broken image
-    e.target.nextSibling.style.display = "none"; // Hide open button
-    e.target.nextSibling.nextSibling.style.display = "none"; // Hide download button
+    e.target.style.display = "none";
+    e.target.nextSibling.style.display = "none";
+    e.target.nextSibling.nextSibling.style.display = "none";
     e.target.parentElement.insertBefore(
       document.createTextNode("Image not available"),
       e.target.nextSibling
@@ -191,13 +365,15 @@ const CargoList = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             fullWidth
-            InputProps={searchQuery && {
-              endAdornment: (
-                <IconButton onClick={() => setSearchQuery("")} edge="end">
-                  <CloseIcon />
-                </IconButton>
-              ),
-            }}
+            InputProps={
+              searchQuery && {
+                endAdornment: (
+                  <IconButton onClick={() => setSearchQuery("")} edge="end">
+                    <CloseIcon />
+                  </IconButton>
+                ),
+              }
+            }
           />
         </Box>
       </Box>
@@ -243,7 +419,7 @@ const CargoList = () => {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} align="center">
+                <TableCell colSpan={9} align="center">
                   No cargo bookings found.
                 </TableCell>
               </TableRow>
@@ -282,16 +458,24 @@ const CargoList = () => {
 
       <Dialog
         open={!!selectedCargo}
-        onClose={() => setSelectedCargo(null)}
+        onClose={() => {
+          setSelectedCargo(null);
+          setIsEditing(false);
+          setFormErrors({});
+        }}
         maxWidth="lg"
         fullWidth
         PaperProps={{ sx: { maxHeight: "85vh" } }}
       >
         <DialogTitle sx={{ bgcolor: "whitesmoke" }}>
-          Cargo Booking Details
+          {isEditing ? "Edit Cargo Booking" : "Cargo Booking Details"}
           <IconButton
             aria-label="close"
-            onClick={() => setSelectedCargo(null)}
+            onClick={() => {
+              setSelectedCargo(null);
+              setIsEditing(false);
+              setFormErrors({});
+            }}
             sx={{ position: "absolute", right: 8, top: 8 }}
           >
             <CloseIcon />
@@ -306,148 +490,184 @@ const CargoList = () => {
             <Box>
               {/* Container Booking Details */}
               <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2} mb={4}>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Booking ID</Typography>
-                  <Typography variant="body1">{selectedCargo.id}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Booking No</Typography>
-                  <Typography variant="body1">{selectedCargo.bookingNo}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Shipper Name</Typography>
-                  <Typography variant="body1">{selectedCargo.shipperName}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Consignee</Typography>
-                  <Typography variant="body1">{selectedCargo.consignee}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Actual Shipper</Typography>
-                  <Typography variant="body1">{selectedCargo.actualShipper}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">CY Open</Typography>
-                  <Typography variant="body1">{selectedCargo.cyOpen}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">ETD</Typography>
-                  <Typography variant="body1">{new Date(selectedCargo.etd).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">CY Cut Off</Typography>
-                  <Typography variant="body1">{new Date(selectedCargo.cyCutOff).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">ETA</Typography>
-                  <Typography variant="body1">{new Date(selectedCargo.eta).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Volume</Typography>
-                  <Typography variant="body1">{selectedCargo.volume}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Carrier</Typography>
-                  <Typography variant="body1">{selectedCargo.carrier}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Vessel</Typography>
-                  <Typography variant="body1">{selectedCargo.vessel}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Port of Loading</Typography>
-                  <Typography variant="body1">{selectedCargo.portOfLoading}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Port of Discharge</Typography>
-                  <Typography variant="body1">{selectedCargo.portOfDischarge}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Cargo Mode</Typography>
-                  <Typography variant="body1">{selectedCargo.cargoMode}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Place of Issue</Typography>
-                  <Typography variant="body1">{selectedCargo.placeOfIssue}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Freight Term</Typography>
-                  <Typography variant="body1">{selectedCargo.freightTerm}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Description of Goods</Typography>
-                  <Typography variant="body1">{selectedCargo.descriptionOfGoods}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Image Path</Typography>
-                  <Typography variant="body1">
-                    {selectedCargo.imagePath ? (
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        <img
-                          src={selectedCargo.imagePath}
-                          alt={`Booking ${selectedCargo.bookingNo}`}
-                          style={{ maxWidth: "100px", maxHeight: "100px", objectFit: "contain" }}
-                          onError={(e) => handleImageError(e, "Container Booking")}
+                {[
+                  { label: "Booking ID", name: "id", disabled: true, viewOnly: true },
+                  { label: "Booking No", name: "bookingNo", required: true },
+                  { label: "Shipper Name", name: "shipperName" },
+                  { label: "Consignee", name: "consignee" },
+                  { label: "Actual Shipper", name: "actualShipper" },
+                  { label: "CY Open", name: "cyOpen" },
+                  { label: "ETD", name: "etd", type: "date" },
+                  { label: "CY Cut Off", name: "cyCutOff", type: "date" },
+                  { label: "ETA", name: "eta", type: "date" },
+                  { label: "Volume", name: "volume", type: "number" },
+                  { label: "Carrier", name: "carrier" },
+                  { label: "Vessel", name: "vessel" },
+                  { label: "Port of Loading", name: "portOfLoading" },
+                  { label: "Port of Discharge", name: "portOfDischarge" },
+                  { label: "Cargo Mode", name: "cargoMode" },
+                  { label: "Place of Issue", name: "placeOfIssue" },
+                  { label: "Freight Term", name: "freightTerm" },
+                  { label: "Description of Goods", name: "descriptionOfGoods", multiline: true },
+                  { label: "Vanning Charges", name: "vanning_charges", type: "number" },
+                  { label: "Seal Amount", name: "seal_amount", type: "number" },
+                  { label: "Surrender Fee", name: "surrender_fee", type: "number" },
+                  { label: "BL Fee", name: "bl_fee", type: "number" },
+                  { label: "Radiation Fee", name: "radiation_fee", type: "number" },
+                  { label: "Booking Service Charges", name: "booking_service_charges", type: "number" },
+                  { label: "Other Amount", name: "other_amount", type: "number", required: true },
+                  {
+                    label: "Paid Status",
+                    name: "paid_status",
+                    type: "select",
+                    options: ["Paid", "UnPaid"],
+                    required: true,
+                  },
+                  { label: "Comments", name: "comments", multiline: true },
+                  { label: "Total Amount 1", name: "totalAmount1", type: "number" },
+                  { label: "Total Amount 1 (USD)", name: "totalAmount1_dollars", type: "number" },
+                  { label: "Freight Amount", name: "freight_amount", type: "number" },
+                  { label: "Freight Amount (USD)", name: "freight_amount_dollars", type: "number" },
+                  { label: "Net Total Amount", name: "net_total_amount", type: "number" },
+                  { label: "Net Total Amount (USD)", name: "net_total_amount_dollars", type: "number" },
+                  { label: "Image Path", name: "imagePath" },
+                  { label: "Added By", name: "added_by", type: "number" },
+                  { label: "Created At", name: "createdAt", disabled: true, viewOnly: true },
+                  { label: "Updated At", name: "updatedAt", disabled: true, viewOnly: true },
+                ].map((field) =>
+                  isEditing && !field.viewOnly ? (
+                    <Paper elevation={1} sx={{ p: 2 }} key={field.name}>
+                      {field.type === "select" ? (
+                        <FormControl fullWidth error={!!formErrors[field.name]}>
+                          <InputLabel>{field.label}</InputLabel>
+                          <Select
+                            name={field.name}
+                            value={formData[field.name] || ""}
+                            onChange={handleInputChange}
+                            label={field.label}
+                            required={field.required}
+                          >
+                            {field.options.map((option) => (
+                              <MenuItem key={option} value={option}>
+                                {option}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                          {formErrors[field.name] && (
+                            <Typography variant="caption" color="error">
+                              {formErrors[field.name]}
+                            </Typography>
+                          )}
+                        </FormControl>
+                      ) : (
+                        <TextField
+                          label={field.label}
+                          name={field.name}
+                          value={formData[field.name] || ""}
+                          onChange={handleInputChange}
+                          type={field.type || "text"}
+                          fullWidth
+                          required={field.required}
+                          disabled={field.disabled}
+                          multiline={field.multiline}
+                          rows={field.multiline ? 4 : 1}
+                          error={!!formErrors[field.name]}
+                          helperText={formErrors[field.name]}
+                          variant="outlined"
                         />
-                        <IconButton size="small" href={selectedCargo.imagePath} target="_blank" rel="noopener noreferrer">
-                          <OpenInNewIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleDownloadImage(selectedCargo.imagePath, `booking-${selectedCargo.id}.jpg`)}
-                        >
-                          <DownloadIcon fontSize="small" />
-                        </IconButton>
-                      </Box>
-                    ) : (
-                      "N/A"
-                    )}
-                  </Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Added By</Typography>
-                  <Typography variant="body1">{selectedCargo.added_by}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Created At</Typography>
-                  <Typography variant="body1">{new Date(selectedCargo.createdAt).toLocaleString()}</Typography>
-                </Paper>
-                <Paper elevation={1} sx={{ p: 2 }}>
-                  <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                  <Typography variant="body1">{new Date(selectedCargo.updatedAt).toLocaleString()}</Typography>
-                </Paper>
+                      )}
+                    </Paper>
+                  ) : (
+                    <Paper elevation={1} sx={{ p: 2 }} key={field.name}>
+                      <Typography variant="caption" color="textSecondary">
+                        {field.label}
+                      </Typography>
+                      <Typography variant="body1">
+                        {field.name === "imagePath" && selectedCargo[field.name] ? (
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            <img
+                              src={selectedCargo[field.name]}
+                              alt={`Booking ${selectedCargo.bookingNo}`}
+                              style={{ maxWidth: "100px", maxHeight: "100px", objectFit: "contain" }}
+                              onError={(e) => handleImageError(e, "Container Booking")}
+                            />
+                            <IconButton
+                              size="small"
+                              href={selectedCargo[field.name]}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <OpenInNewIcon fontSize="small" />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                handleDownloadImage(
+                                  selectedCargo[field.name],
+                                  `booking-${selectedCargo.id}.jpg`
+                                )
+                              }
+                            >
+                              <DownloadIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        ) : field.name.includes("At") ? (
+                          new Date(selectedCargo[field.name]).toLocaleString()
+                        ) : (
+                          selectedCargo[field.name] || "N/A"
+                        )}
+                      </Typography>
+                    </Paper>
+                  )
+                )}
               </Box>
 
-              {/* Container Details */}
+              {/* Container Details (View Only) */}
               {selectedCargo.containerDetails && selectedCargo.containerDetails.length > 0 && (
                 <Box mt={4}>
-                  <Typography variant="h6" gutterBottom>Container Details</Typography>
+                  <Typography variant="h6" gutterBottom>
+                    Container Details
+                  </Typography>
                   {selectedCargo.containerDetails.map((detail, idx) => (
                     <Paper key={detail.id} elevation={1} sx={{ p: 2, mb: 2 }}>
-                      <Typography variant="subtitle1" gutterBottom>Container Detail #{idx + 1}</Typography>
+                      <Typography variant="subtitle1" gutterBottom>
+                        Container Detail #{idx + 1}
+                      </Typography>
                       <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Consignee Name</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Consignee Name
+                          </Typography>
                           <Typography variant="body1">{detail.consigneeName}</Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Notify Party</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Notify Party
+                          </Typography>
                           <Typography variant="body1">{detail.notifyParty}</Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Shipper Per</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Shipper Per
+                          </Typography>
                           <Typography variant="body1">{detail.shipperPer}</Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Booking No</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Booking No
+                          </Typography>
                           <Typography variant="body1">{detail.bookingNo}</Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Note</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Note
+                          </Typography>
                           <Typography variant="body1">{detail.note}</Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Image Path</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Image Path
+                          </Typography>
                           <Typography variant="body1">
                             {detail.imagePath ? (
                               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -457,12 +677,19 @@ const CargoList = () => {
                                   style={{ maxWidth: "100px", maxHeight: "100px", objectFit: "contain" }}
                                   onError={(e) => handleImageError(e, "Container Detail")}
                                 />
-                                <IconButton size="small" href={detail.imagePath} target="_blank" rel="noopener noreferrer">
+                                <IconButton
+                                  size="small"
+                                  href={detail.imagePath}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
                                   <OpenInNewIcon fontSize="small" />
                                 </IconButton>
                                 <IconButton
                                   size="small"
-                                  onClick={() => handleDownloadImage(detail.imagePath, `container-${detail.id}.jpg`)}
+                                  onClick={() =>
+                                    handleDownloadImage(detail.imagePath, `container-${detail.id}.jpg`)
+                                  }
                                 >
                                   <DownloadIcon fontSize="small" />
                                 </IconButton>
@@ -473,23 +700,35 @@ const CargoList = () => {
                           </Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Added By</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Added By
+                          </Typography>
                           <Typography variant="body1">{detail.added_by}</Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Created At</Typography>
-                          <Typography variant="body1">{new Date(detail.createdAt).toLocaleString()}</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Created At
+                          </Typography>
+                          <Typography variant="body1">
+                            {new Date(detail.createdAt).toLocaleString()}
+                          </Typography>
                         </Box>
                         <Box>
-                          <Typography variant="caption" color="textSecondary">Updated At</Typography>
-                          <Typography variant="body1">{new Date(detail.updatedAt).toLocaleString()}</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            Updated At
+                          </Typography>
+                          <Typography variant="body1">
+                            {new Date(detail.updatedAt).toLocaleString()}
+                          </Typography>
                         </Box>
                       </Box>
 
-                      {/* Container Item Details in Table */}
+                      {/* Container Item Details */}
                       {detail.containerItems && detail.containerItems.length > 0 && (
                         <Box mt={2}>
-                          <Typography variant="subtitle2" gutterBottom>Container Items</Typography>
+                          <Typography variant="subtitle2" gutterBottom>
+                            Container Items
+                          </Typography>
                           <TableContainer component={Paper} sx={{ bgcolor: "#f5f5f5" }}>
                             <Table size="small">
                               <TableHead sx={{ bgcolor: "whitesmoke" }}>
@@ -501,7 +740,6 @@ const CargoList = () => {
                                   <TableCell>Color</TableCell>
                                   <TableCell>CC</TableCell>
                                   <TableCell>Amount</TableCell>
-                                
                                 </TableRow>
                               </TableHead>
                               <TableBody>
@@ -514,7 +752,6 @@ const CargoList = () => {
                                     <TableCell>{item.color}</TableCell>
                                     <TableCell>{item.cc}</TableCell>
                                     <TableCell>$ {item.amount}</TableCell>
-                                   
                                   </TableRow>
                                 ))}
                               </TableBody>
@@ -536,28 +773,53 @@ const CargoList = () => {
         <DialogActions>
           {selectedCargo && (
             <>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={() => handleUpdate(selectedCargo)}
-              >
-                Update
-              </Button>
-              <Button
-                variant="contained"
-                color="error"
-                onClick={() => handleDelete(selectedCargo.id)}
-              >
-                Delete
-              </Button>
+              {isEditing ? (
+                <>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleSave}
+                    disabled={dialogLoading || Object.keys(formErrors).length > 0}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={handleCancelEdit}
+                    disabled={dialogLoading}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handleUpdate}
+                    disabled={dialogLoading}
+                  >
+                    Update
+                  </Button>
+                  <Button
+                    variant="contained"
+                    color="error"
+                    onClick={() => handleDelete(selectedCargo.id)}
+                    disabled={dialogLoading}
+                  >
+                    Delete
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setSelectedCargo(null)}
+                    disabled={dialogLoading}
+                  >
+                    Close
+                  </Button>
+                </>
+              )}
             </>
           )}
-          <Button
-            variant="outlined"
-            onClick={() => setSelectedCargo(null)}
-          >
-            Close
-          </Button>
         </DialogActions>
       </Dialog>
     </Paper>

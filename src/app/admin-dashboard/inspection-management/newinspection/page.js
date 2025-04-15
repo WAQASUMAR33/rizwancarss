@@ -11,6 +11,8 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { Add as PlusIcon, Delete as TrashIcon } from "@mui/icons-material";
 import { useSelector } from "react-redux";
@@ -22,63 +24,61 @@ async function getExchangeRate() {
     );
     if (!response.ok) throw new Error("Failed to fetch exchange rate");
     const data = await response.json();
-    return data.conversion_rate || 0.0067; // Fallback rate if API fails
+    return data.conversion_rate || 0.0067;
   } catch (error) {
     console.error("Error fetching exchange rate:", error);
-    return 0.0067; // Default fallback rate (approx JPY to USD)
+    return 0.0067;
   }
 }
 
 export default function InspectionBookingForm() {
-  const [allVehicles, setAllVehicles] = useState([]); // Store all vehicles for dropdown
+  const [allVehicles, setAllVehicles] = useState([]);
   const [exchangeRate, setExchangeRate] = useState(0);
   const [inspectionData, setInspectionData] = useState({
     date: "",
     company: "",
     receiptImage: null,
     admin_id: null,
-    vehicles: [], // Now includes only id, chassisNo, and vamount_doller
+    vehicles: [],
     invoiceno: "",
     invoice_amount: "",
     invoice_tax: 0,
     invoice_total: 0,
     invoice_amount_dollers: 0,
+    paid_status: "UnPaid",
   });
-  const [totalAmountYen, setTotalAmountYen] = useState(0); // invoice_total
-  const [totalAmountDollars, setTotalAmountDollars] = useState(0); // invoice_amount_dollers
+  const [totalAmountYen, setTotalAmountYen] = useState(0);
+  const [totalAmountDollars, setTotalAmountDollars] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [fetchError, setFetchError] = useState(""); // For API fetch errors
+  const [fetchError, setFetchError] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
 
   const username = useSelector((state) => state.user.username);
   const userid = useSelector((state) => state.user.id);
 
-  // Set admin_id from Redux state
   useEffect(() => {
     setInspectionData((prev) => ({ ...prev, admin_id: userid }));
   }, [userid]);
 
-  // Fetch exchange rate and vehicles on mount
   useEffect(() => {
     const fetchExchangeRateAndVehicles = async () => {
       try {
         const [rate, vehiclesResponse] = await Promise.all([
           getExchangeRate(),
-          fetch("/api/admin/vehicles"), // Fetch all vehicles
+          fetch("/api/admin/vehicles"),
         ]);
 
         if (!vehiclesResponse.ok) {
           const errorData = await vehiclesResponse.json();
           throw new Error(errorData.message || "Failed to fetch vehicles");
         }
-        const vehiclesData = await vehiclesResponse.json(); // Fixed: Changed 'response' to 'vehiclesResponse'
+        const vehiclesData = await vehiclesResponse.json();
         const vehiclesArray = vehiclesData.data || vehiclesData;
         if (!Array.isArray(vehiclesArray)) {
           throw new Error("Vehicles data is not an array");
         }
 
-        // Map the API response to only include necessary fields for the dropdown
         const filteredVehicles = vehiclesArray.map((vehicle) => ({
           id: vehicle.id,
           chassisNo: vehicle.chassisNo,
@@ -89,7 +89,7 @@ export default function InspectionBookingForm() {
 
         setAllVehicles(filteredVehicles);
         setExchangeRate(rate);
-        setFetchError(""); // Clear any previous fetch error
+        setFetchError("");
       } catch (err) {
         console.error("Error fetching data:", err);
         setFetchError("Error fetching vehicles: " + err.message);
@@ -99,10 +99,9 @@ export default function InspectionBookingForm() {
     fetchExchangeRateAndVehicles();
   }, []);
 
-  // Calculate invoice totals and per-vehicle vamount_doller when invoice_amount or vehicles change
   useEffect(() => {
     const invoiceAmount = parseFloat(inspectionData.invoice_amount) || 0;
-    const invoiceTax = invoiceAmount * 0.1; // 10% tax
+    const invoiceTax = invoiceAmount * 0.1;
     const invoiceTotal = invoiceAmount + invoiceTax;
     const invoiceAmountDollers = invoiceTotal * exchangeRate;
 
@@ -125,13 +124,11 @@ export default function InspectionBookingForm() {
   const addToInspection = (vehicle) => {
     if (!vehicle) return;
 
-    // Check if vehicle is already added
     if (inspectionData.vehicles.some((v) => v.id === vehicle.id)) {
       setError("This vehicle has already been added.");
       return;
     }
 
-    // Check vehicle status (must be "Transport" for inspection)
     if (vehicle.status === "Transport") {
       setInspectionData((prev) => {
         const updatedVehicles = [
@@ -216,11 +213,12 @@ export default function InspectionBookingForm() {
         invoice_amount_dollers: inspectionData.invoice_amount_dollers,
         vamount_doller: vamountDoller,
         imagePath: imagePath || "",
+        paid_status: inspectionData.paid_status,
         admin_id: inspectionData.admin_id,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         vehicles: inspectionData.vehicles.map((v) => ({
-          id: v.id, // For updating vehicle status
+          id: v.id,
         })),
       };
 
@@ -250,6 +248,7 @@ export default function InspectionBookingForm() {
         invoice_tax: 0,
         invoice_total: 0,
         invoice_amount_dollers: 0,
+        paid_status: "UnPaid",
       });
       setImagePreview(null);
     } catch (error) {
@@ -261,12 +260,11 @@ export default function InspectionBookingForm() {
   };
 
   return (
-    <Box sx={{ p: 2, bgcolor: "white" }}> {/* Changed background color to white */}
+    <Box sx={{ p: 2, bgcolor: "white" }}>
       <Typography variant="h4" gutterBottom>
         New Inspection Booking
       </Typography>
 
-      {/* Inspection Details */}
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Inspection Details
@@ -297,7 +295,16 @@ export default function InspectionBookingForm() {
             onChange={(e) => handleInputChange("invoiceno", e.target.value)}
             fullWidth
           />
-          
+          <Select
+            label="Payment Status"
+            variant="outlined"
+            value={inspectionData.paid_status}
+            onChange={(e) => handleInputChange("paid_status", e.target.value)}
+            fullWidth
+          >
+            <MenuItem value="UnPaid">UnPaid</MenuItem>
+            <MenuItem value="Paid">Paid</MenuItem>
+          </Select>
           <TextField
             type="number"
             label="Invoice Amount (Yen)"
@@ -330,9 +337,7 @@ export default function InspectionBookingForm() {
             InputProps={{ readOnly: true }}
             fullWidth
           />
-
-
-<         Box display="flex" flexDirection="column">
+          <Box display="flex" flexDirection="column">
             <TextField
               type="file"
               variant="outlined"
@@ -354,7 +359,6 @@ export default function InspectionBookingForm() {
         </Box>
       </Paper>
 
-      {/* Select Vehicle */}
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Select Vehicle
@@ -390,9 +394,9 @@ export default function InspectionBookingForm() {
                       sx={{
                         display: "inline-block",
                         backgroundColor:
-                          vehicle.status === "Transport" ? "#e8f5e9" : "#ffebee", // Green for Transport, Red for others
-                        px: 1, // Padding for the background
-                        borderRadius: 1, // Rounded corners for the background
+                          vehicle.status === "Transport" ? "#e8f5e9" : "#ffebee",
+                        px: 1,
+                        borderRadius: 1,
                       }}
                     >
                       Status: {vehicle.status}
@@ -404,7 +408,7 @@ export default function InspectionBookingForm() {
                     edge="end"
                     aria-label="add"
                     onClick={(e) => {
-                      e.stopPropagation(); // Prevent Autocomplete from closing prematurely
+                      e.stopPropagation();
                       addToInspection(vehicle);
                     }}
                   >
@@ -418,7 +422,6 @@ export default function InspectionBookingForm() {
         </Box>
       </Paper>
 
-      {/* Vehicles for Inspection */}
       <Paper elevation={3} sx={{ p: 3 }}>
         <Typography variant="h6" gutterBottom>
           Vehicles for Inspection

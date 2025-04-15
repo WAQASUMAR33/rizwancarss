@@ -1,10 +1,22 @@
-import { NextResponse } from 'next/server';
-import prisma from '@/utils/prisma';
+import { NextResponse } from "next/server";
+import prisma from "@/utils/prisma";
 
-export async function POST(request) {
-  console.log("POST request received at /api/admin/inspection");
+export async function PUT(request, { params }) {
+  console.log(`PUT request received at /api/admin/inspection/${params.id}`);
 
   try {
+    const id = parseInt(params.id);
+    if (isNaN(id)) {
+      return NextResponse.json(
+        {
+          message: "Invalid inspection ID",
+          status: false,
+          error: "ID must be a number",
+        },
+        { status: 400 }
+      );
+    }
+
     const contentType = request.headers.get("Content-Type") || "";
     console.log("Content-Type received:", contentType);
 
@@ -29,16 +41,25 @@ export async function POST(request) {
     if (!body.admin_id) throw new Error("Missing required field: admin_id");
 
     const adminId = parseInt(body.admin_id);
+    if (isNaN(adminId)) throw new Error("Invalid admin_id: Must be a number");
 
     const result = await prisma.$transaction(
       async (tx) => {
         console.log("Starting transaction");
 
-        // Create inspection
+        // Check if inspection exists
+        const existingInspection = await tx.inspection.findUnique({
+          where: { id },
+        });
+        if (!existingInspection) {
+          throw new Error("Inspection not found");
+        }
+
+        // Prepare inspection data
         const inspectionData = {
           date: new Date(body.date),
           company: body.company || "",
-          vehicleNo: body.vehicleNo || "",
+          vehicleNo: parseInt(body.vehicleNo) || 0,
           invoiceno: body.invoiceno || "",
           invoice_amount: parseFloat(body.invoice_amount) || 0,
           invoice_tax: parseFloat(body.invoice_tax) || 0,
@@ -48,29 +69,26 @@ export async function POST(request) {
           imagePath: body.imagePath || "",
           paid_status: body.paid_status || "UnPaid",
           admin_id: adminId,
-          createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-          updatedAt: body.updatedAt ? new Date(body.updatedAt) : new Date(),
+          updatedAt: new Date(),
         };
 
-        const inspection = await tx.inspection.create({ data: inspectionData });
-        console.log("Inspection created:", inspection);
-
-        // Update vehicle statuses if provided
-        const vehicleUpdates = (body.vehicles || []).map((vehicle) => ({
-          id: parseInt(vehicle.id),
-        }));
-
-        for (const vehicle of vehicleUpdates) {
-          if (!vehicle.id) throw new Error("Missing required field: vehicle.id");
-          await tx.addVehicle.update({
-            where: { id: vehicle.id },
-            data: { status: "Inspection" },
-          });
-          console.log(`Vehicle ID ${vehicle.id} status updated to Inspection`);
+        // Validate paid_status
+        if (!["Paid", "UnPaid"].includes(inspectionData.paid_status)) {
+          throw new Error("Invalid paid_status: Must be 'Paid' or 'UnPaid'");
         }
 
+        // Update inspection
+        const updatedInspection = await tx.inspection.update({
+          where: { id },
+          data: inspectionData,
+        });
+        console.log("Inspection updated:", updatedInspection);
+
         // Payment logic for paid_status: "Paid"
-        if (inspection.paid_status === "Paid") {
+        if (
+          inspectionData.paid_status === "Paid" &&
+          existingInspection.paid_status !== "Paid"
+        ) {
           console.log("Processing Paid status");
           const admin = await tx.admin.findUnique({
             where: { id: 1 },
@@ -93,7 +111,7 @@ export async function POST(request) {
               debit: 0.0,
               credit: invoiceAmount,
               balance: newBalance,
-              description: `Payment for Inspection #${inspection.invoiceno}`,
+              description: `Payment for Inspection #${inspectionData.invoiceno}`,
               transaction_at: new Date(),
               created_at: new Date(),
               updated_at: new Date(),
@@ -109,7 +127,7 @@ export async function POST(request) {
         }
 
         console.log("Transaction completing");
-        return { inspection, vehicles: vehicleUpdates };
+        return updatedInspection;
       },
       {
         maxWait: 10000,
@@ -121,14 +139,24 @@ export async function POST(request) {
 
     return NextResponse.json(
       {
-        message: "Inspection created successfully",
+        message: "Inspection updated successfully",
         status: true,
         data: result,
       },
-      { status: 201 }
+      { status: 200 }
     );
   } catch (error) {
     console.error("Error processing request:", error.stack || error);
+    if (error.message === "Inspection not found") {
+      return NextResponse.json(
+        {
+          message: "Inspection not found",
+          status: false,
+          error: error.message,
+        },
+        { status: 404 }
+      );
+    }
     if (error.code === "P2002" && error.meta?.target?.includes("invoiceno")) {
       return NextResponse.json(
         {
@@ -142,7 +170,7 @@ export async function POST(request) {
     if (error.code === "P2025") {
       return NextResponse.json(
         {
-          message: "Invalid admin_id or vehicle ID: Record not found",
+          message: "Invalid admin_id: Record not found",
           status: false,
           error: error.message,
         },
@@ -159,49 +187,6 @@ export async function POST(request) {
     );
   } finally {
     console.log("Disconnecting Prisma client");
-    await prisma.$disconnect();
-  }
-}
-
-export async function GET() {
-  try {
-    console.log("Fetching invoices with related vehicles and images...");
-
-    // Fetch all invoices with their related vehicles and images
-    const invoices = await prisma.invoice.findMany({
-      include: {
-        vehicles: {
-          include: {
-            vehicleImages: true,
-            admin: true,
-            seaPort: true,
-          },
-        },
-      },
-    });
-
-    console.log("Fetched data:", JSON.stringify(invoices, null, 2));
-
-    return NextResponse.json({
-      message: "Invoices fetched successfully",
-      status: true,
-      data: invoices,
-    }, { status: 200 });
-  } catch (error) {
-    console.error('Error fetching invoices:', {
-      message: error.message,
-      stack: error.stack,
-      code: error.code,
-    });
-    return NextResponse.json(
-      {
-        message: 'Failed to fetch invoices',
-        status: false,
-        error: error.message,
-      },
-      { status: 500 }
-    );
-  } finally {
     await prisma.$disconnect();
   }
 }
