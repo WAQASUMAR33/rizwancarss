@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/utils/prisma';
 
 export async function POST(request) {
-  console.log("POST request received at /api/admin/inspection");
+  console.log("POST request received at /api/admin/invoice-management");
 
   try {
     const contentType = request.headers.get("Content-Type") || "";
@@ -22,106 +22,93 @@ export async function POST(request) {
     const body = await request.json();
     console.log("Received JSON Data:", JSON.stringify(body, null, 2));
 
-    // Validate required fields
+    // Validate required fields based on Invoice model
     if (!body.date) throw new Error("Missing required field: date");
-    if (!body.company) throw new Error("Missing required field: company");
-    if (!body.invoiceno) throw new Error("Missing required field: invoiceno");
-    if (!body.admin_id) throw new Error("Missing required field: admin_id");
+    if (!body.number) throw new Error("Missing required field: number");
+    if (!body.added_by) throw new Error("Missing required field: added_by");
 
-    const adminId = parseInt(body.admin_id);
+    const addedBy = parseInt(body.added_by);
 
-    const result = await prisma.$transaction(
-      async (tx) => {
-        console.log("Starting transaction");
+    const result = await prisma.$transaction(async (tx) => {
+      console.log("Starting transaction");
 
-        // Create inspection
-        const inspectionData = {
-          date: new Date(body.date),
-          company: body.company || "",
-          vehicleNo: body.vehicleNo || "",
-          invoiceno: body.invoiceno || "",
-          invoice_amount: parseFloat(body.invoice_amount) || 0,
-          invoice_tax: parseFloat(body.invoice_tax) || 0,
-          invoice_total: parseFloat(body.invoice_total) || 0,
-          invoice_amount_dollers: parseFloat(body.invoice_amount_dollers) || 0,
-          vamount_doller: parseFloat(body.vamount_doller) || 0,
-          imagePath: body.imagePath || "",
-          paid_status: body.paid_status || "UnPaid",
-          admin_id: adminId,
-          createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-          updatedAt: body.updatedAt ? new Date(body.updatedAt) : new Date(),
-        };
+      // Create Invoice
+      const invoiceData = {
+        date: new Date(body.date),
+        number: body.number || "",
+        status: body.status || "UNPAID",
+        auctionHouse: body.auctionHouse || "",
+        imagePath: body.imagePath || "",
+        amountYen: parseFloat(body.amountYen) || 0,
+        amount_doller: parseFloat(body.amount_doller) || 0,
+        added_by: addedBy,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
 
-        const inspection = await tx.inspection.create({ data: inspectionData });
-        console.log("Inspection created:", inspection);
+      const invoice = await tx.invoice.create({ data: invoiceData });
+      console.log("Invoice created:", invoice);
 
-        // Update vehicle statuses if provided
-        const vehicleUpdates = (body.vehicles || []).map((vehicle) => ({
-          id: parseInt(vehicle.id),
-        }));
+      // Create vehicles if provided
+      const vehicles = body.vehicles || [];
+      const vehicleRecords = await Promise.all(
+        vehicles.map(async (vehicle) => {
+          if (!vehicle.admin_id) throw new Error(`Missing required field: admin_id for vehicle ${vehicle.chassisNo || 'unknown'}`);
 
-        for (const vehicle of vehicleUpdates) {
-          if (!vehicle.id) throw new Error("Missing required field: vehicle.id");
-          await tx.addVehicle.update({
-            where: { id: vehicle.id },
-            data: { status: "Inspection" },
-          });
-          console.log(`Vehicle ID ${vehicle.id} status updated to Inspection`);
-        }
-
-        // Payment logic for paid_status: "Paid"
-        if (inspection.paid_status === "Paid") {
-          console.log("Processing Paid status");
-          const admin = await tx.admin.findUnique({
-            where: { id: 1 },
-            select: { balance: true },
-          });
-          if (!admin) throw new Error("Admin with ID 1 not found");
-
-          const currentBalance = admin.balance || 0;
-          const invoiceAmount = parseFloat(body.invoice_amount_dollers) || 0;
-          const newBalance = currentBalance - invoiceAmount;
-
-          // Optional: Uncomment to enforce positive balance
-          // if (newBalance < 0) {
-          //   throw new Error("Insufficient admin balance for this transaction");
-          // }
-
-          const ledgerEntry = await tx.ledger.create({
-            data: {
-              admin_id: 1,
-              debit: 0.0,
-              credit: invoiceAmount,
-              balance: newBalance,
-              description: `Payment for Inspection #${inspection.invoiceno}`,
-              transaction_at: new Date(),
-              created_at: new Date(),
-              updated_at: new Date(),
+          const vehicleData = {
+            invoiceId: invoice.id,
+            chassisNo: vehicle.chassisNo || "",
+            maker: vehicle.maker || "",
+            year: vehicle.year || "",
+            color: vehicle.color || "",
+            engineType: vehicle.engineType || "",
+            auction_amount: parseFloat(vehicle.auction_amount) || 0,
+            tenPercentAdd: parseFloat(vehicle.tenPercentAdd) || 0,
+            bidAmount: parseFloat(vehicle.bidAmount) || 0,
+            bidAmount10per: parseFloat(vehicle.bidAmount10per) || 0,
+            recycleAmount: parseFloat(vehicle.recycleAmount) || 0,
+            auction_house: vehicle.auction_house || "",
+            lotnumber: vehicle.lotnumber || "",
+            commissionAmount: parseFloat(vehicle.commissionAmount) || 0,
+            numberPlateTax: parseFloat(vehicle.numberPlateTax) || 0,
+            repairCharges: parseFloat(vehicle.repairCharges) || 0,
+            totalAmount_yen: parseFloat(vehicle.totalAmount_yen) || 0,
+            totalAmount_dollers: parseFloat(vehicle.totalAmount_dollers) || 0,
+            sendingPort: vehicle.sendingPort ? parseInt(vehicle.sendingPort) : null,
+            additionalAmount: parseFloat(vehicle.additionalAmount) || 0,
+            isDocumentRequired: vehicle.isDocumentRequired || "",
+            documentReceiveDate: vehicle.documentReceiveDate ? new Date(vehicle.documentReceiveDate) : null,
+            isOwnership: vehicle.isOwnership || "",
+            ownershipDate: vehicle.ownershipDate ? new Date(vehicle.ownershipDate) : null,
+            status: vehicle.status || "Pending",
+            admin_id: parseInt(vehicle.admin_id),
+            added_by: parseInt(vehicle.added_by) || addedBy,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            vehicleImages: {
+              create: (vehicle.vehicleImages || []).map((image) => ({
+                imagePath: image,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              })),
             },
-          });
-          console.log("Ledger entry created:", ledgerEntry);
+          };
 
-          await tx.admin.update({
-            where: { id: 1 },
-            data: { balance: newBalance },
-          });
-          console.log(`Admin ID 1 balance updated to: ${newBalance}`);
-        }
+          const vehicleRecord = await tx.addVehicle.create({ data: vehicleData });
+          console.log(`Vehicle created: ${vehicleRecord.chassisNo}`);
+          return vehicleRecord;
+        })
+      );
 
-        console.log("Transaction completing");
-        return { inspection, vehicles: vehicleUpdates };
-      },
-      {
-        maxWait: 10000,
-        timeout: 30000,
-      }
-    );
+      console.log("Transaction completing");
+      return { invoice, vehicles: vehicleRecords };
+    });
 
     console.log("Transaction completed, data saved:", JSON.stringify(result, null, 2));
 
     return NextResponse.json(
       {
-        message: "Inspection created successfully",
+        message: "Invoice created successfully",
         status: true,
         data: result,
       },
@@ -129,10 +116,10 @@ export async function POST(request) {
     );
   } catch (error) {
     console.error("Error processing request:", error.stack || error);
-    if (error.code === "P2002" && error.meta?.target?.includes("invoiceno")) {
+    if (error.code === "P2002" && error.meta?.target?.includes("number")) {
       return NextResponse.json(
         {
-          message: "An inspection with this invoice number already exists",
+          message: "An invoice with this number already exists",
           status: false,
           error: "Duplicate invoice number",
         },
@@ -142,7 +129,7 @@ export async function POST(request) {
     if (error.code === "P2025") {
       return NextResponse.json(
         {
-          message: "Invalid admin_id or vehicle ID: Record not found",
+          message: "Invalid admin_id, sendingPort, or other reference: Record not found",
           status: false,
           error: error.message,
         },

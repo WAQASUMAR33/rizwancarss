@@ -317,28 +317,35 @@ export default function NewBookingForm({ invoiceId = null }) {
     try {
       setSubmitting(true);
       let jsonPayload = { ...invoiceData };
-
+  
+      // Client-side validation
       if (!jsonPayload.number || jsonPayload.number === "") throw new Error("Invoice number is required.");
-
+      if (!jsonPayload.date) throw new Error("Invoice date is required.");
+      if (!jsonPayload.added_by) throw new Error("User ID is required.");
+      jsonPayload.vehicles.forEach((vehicle, index) => {
+        if (!vehicle.admin_id) throw new Error(`Admin ID is required for vehicle ${vehicle.chassisNo || index + 1}`);
+        if (!vehicle.chassisNo) throw new Error(`Chassis number is required for vehicle ${index + 1}`);
+      });
+  
       jsonPayload.amountYen = parseFloat(jsonPayload.amountYen) || 0;
       jsonPayload.amount_doller = parseFloat(jsonPayload.amount_doller) || 0;
       jsonPayload.added_by = parseInt(userid);
-
+  
       if (jsonPayload.imagePath && typeof jsonPayload.imagePath !== "string") {
         const base64Image = await convertToBase64(jsonPayload.imagePath[0]);
         const imageUrl = await uploadImageToServer(base64Image);
         jsonPayload.imagePath = imageUrl || "";
       } else if (typeof jsonPayload.imagePath === "string") {
-        // Keep existing URL if no new file is uploaded
+        // Keep existing URL
       } else {
         jsonPayload.imagePath = "";
       }
-
+  
       const updatedVehiclesForSubmit = await Promise.all(
         updatedVehicles.map(async (vehicle, index) => {
           let updatedVehicle = { ...vehicle };
           delete updatedVehicle.vehicleImagePreviews;
-
+  
           const numericFields = [
             "auction_amount",
             "tenPercentAdd",
@@ -355,28 +362,24 @@ export default function NewBookingForm({ invoiceId = null }) {
           numericFields.forEach((field) => {
             updatedVehicle[field] = parseFloat(updatedVehicle[field]) || 0;
           });
-
+  
           updatedVehicle.year = String(vehicle.year || "");
           updatedVehicle.sendingPort = vehicle.sendingPort ? parseInt(vehicle.sendingPort, 10) : null;
           updatedVehicle.admin_id = vehicle.admin_id ? parseInt(vehicle.admin_id, 10) : null;
           updatedVehicle.added_by = parseInt(userid);
-          updatedVehicle.id = vehicle.id || undefined; // Include ID for updates
-
-          if (!updatedVehicle.admin_id) {
-            throw new Error(`Admin ID is required for vehicle ${vehicle.chassisNo || index + 1}`);
-          }
-
+          updatedVehicle.id = vehicle.id || undefined;
+  
           if (vehicle.documentReceiveDate) {
             updatedVehicle.documentReceiveDate = new Date(vehicle.documentReceiveDate).toISOString();
           }
           if (vehicle.ownershipDate) {
             updatedVehicle.ownershipDate = new Date(vehicle.ownershipDate).toISOString();
           }
-
+  
           if (vehicle.vehicleImages && vehicle.vehicleImages.length > 0) {
             const imageUrls = await Promise.all(
               vehicle.vehicleImages.map(async (file) => {
-                if (typeof file === "string") return file; // Keep existing URL
+                if (typeof file === "string") return file;
                 const base64Image = await convertToBase64(file);
                 return await uploadImageToServer(base64Image);
               })
@@ -385,16 +388,16 @@ export default function NewBookingForm({ invoiceId = null }) {
           } else {
             updatedVehicle.vehicleImages = [];
           }
-
+  
           return updatedVehicle;
         })
       );
-
+  
       jsonPayload.vehicles = updatedVehiclesForSubmit;
       jsonPayload.amount_doller = amountDoller;
-
+  
       console.log("JSON Payload to be sent:", JSON.stringify(jsonPayload, null, 2));
-
+  
       const method = invoiceId ? "PUT" : "POST";
       const url = invoiceId ? `/api/admin/invoice-management?id=${invoiceId}` : "/api/admin/invoice-management";
       const response = await fetch(url, {
@@ -402,15 +405,22 @@ export default function NewBookingForm({ invoiceId = null }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(jsonPayload),
       });
-
+  
       const textResponse = await response.text();
       console.log("Raw API response:", textResponse);
-
-      if (!response.ok) throw new Error(`Server Error: ${response.status} - ${textResponse}`);
-
+  
+      if (!response.ok) {
+        try {
+          const errorData = JSON.parse(textResponse);
+          throw new Error(`Server Error: ${response.status} - ${errorData.message || errorData.error || textResponse}`);
+        } catch (parseError) {
+          throw new Error(`Server Error: ${response.status} - ${textResponse}`);
+        }
+      }
+  
       const jsonResponse = JSON.parse(textResponse);
       console.log("Parsed JSON response:", jsonResponse);
-
+  
       setInvoiceImagePreview(null);
       setInvoiceData({
         date: "",
@@ -423,9 +433,9 @@ export default function NewBookingForm({ invoiceId = null }) {
         added_by: userid || "",
         vehicles: [],
       });
-
+  
       alert(invoiceId ? "Invoice updated successfully!" : "Invoice and vehicles added successfully!");
-      if (invoiceId) router.push("/invoices"); // Redirect after update
+      if (invoiceId) router.push("/invoices");
     } catch (error) {
       console.error("Error submitting invoice:", error);
       alert(`Failed to submit invoice. Error: ${error.message}`);
