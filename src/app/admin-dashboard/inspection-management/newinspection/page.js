@@ -13,6 +13,8 @@ import {
   ListItemSecondaryAction,
   Select,
   MenuItem,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import { Add as PlusIcon, Delete as TrashIcon } from "@mui/icons-material";
 import { useSelector } from "react-redux";
@@ -41,14 +43,15 @@ export default function InspectionBookingForm() {
     admin_id: null,
     vehicles: [],
     invoiceno: "",
-    invoice_amount: "",
-    invoice_tax: 0,
-    invoice_total: 0,
+    invoice_taxable_amount: "",
+    without_tax: "",
+    with_tax: "",
+    tax_free: "",
+    total_amount: 0,
     invoice_amount_dollers: 0,
+    vamount_doller: 0,
     paid_status: "UnPaid",
   });
-  const [totalAmountYen, setTotalAmountYen] = useState(0);
-  const [totalAmountDollars, setTotalAmountDollars] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [fetchError, setFetchError] = useState("");
@@ -100,29 +103,35 @@ export default function InspectionBookingForm() {
   }, []);
 
   useEffect(() => {
-    const invoiceAmount = parseFloat(inspectionData.invoice_amount) || 0;
-    const invoiceTax = invoiceAmount * 0.1;
-    const invoiceTotal = invoiceAmount + invoiceTax;
-    const invoiceAmountDollers = invoiceTotal * exchangeRate;
+    const invoice_taxable_amount = parseFloat(inspectionData.invoice_taxable_amount) || 0;
+    const tax_free = parseFloat(inspectionData.tax_free) || 0;
+    const total_amount = invoice_taxable_amount + tax_free;
+    const invoice_amount_dollers = total_amount * (exchangeRate || 0.0067);
+    const vamount_doller =
+      inspectionData.vehicles.length > 0 ? invoice_amount_dollers / inspectionData.vehicles.length : 0;
 
     setInspectionData((prev) => ({
       ...prev,
-      invoice_tax: invoiceTax,
-      invoice_total: invoiceTotal,
-      invoice_amount_dollers: invoiceAmountDollers,
+      total_amount,
+      invoice_amount_dollers,
+      vamount_doller,
       vehicles: prev.vehicles.map((vehicle) => ({
         ...vehicle,
-        vamount_doller:
-          prev.vehicles.length > 0 ? invoiceAmountDollers / prev.vehicles.length : 0,
+        vamount_doller,
       })),
     }));
-
-    setTotalAmountYen(invoiceTotal);
-    setTotalAmountDollars(invoiceAmountDollers);
-  }, [inspectionData.invoice_amount, inspectionData.vehicles.length, exchangeRate]);
+  }, [
+    inspectionData.invoice_taxable_amount,
+    inspectionData.tax_free,
+    inspectionData.vehicles.length,
+    exchangeRate,
+  ]);
 
   const addToInspection = (vehicle) => {
-    if (!vehicle) return;
+    if (!vehicle) {
+      setError("Please select a vehicle");
+      return;
+    }
 
     if (inspectionData.vehicles.some((v) => v.id === vehicle.id)) {
       setError("This vehicle has already been added.");
@@ -130,17 +139,17 @@ export default function InspectionBookingForm() {
     }
 
     if (vehicle.status === "Transport") {
-      setInspectionData((prev) => {
-        const updatedVehicles = [
+      setInspectionData((prev) => ({
+        ...prev,
+        vehicles: [
           ...prev.vehicles,
           {
             id: vehicle.id,
             chassisNo: vehicle.chassisNo,
-            vamount_doller: prev.invoice_amount_dollers / (prev.vehicles.length + 1) || 0,
+            vamount_doller: prev.vamount_doller,
           },
-        ];
-        return { ...prev, vehicles: updatedVehicles };
-      });
+        ],
+      }));
       setError("");
     } else {
       setError(`Cannot add vehicle. Current status: ${vehicle.status}. Must be 'Transport'.`);
@@ -148,8 +157,10 @@ export default function InspectionBookingForm() {
   };
 
   const removeVehicle = (index) => {
-    const updatedVehicles = inspectionData.vehicles.filter((_, i) => i !== index);
-    setInspectionData((prev) => ({ ...prev, vehicles: updatedVehicles }));
+    setInspectionData((prev) => ({
+      ...prev,
+      vehicles: prev.vehicles.filter((_, i) => i !== index),
+    }));
   };
 
   const handleInputChange = (field, value) => {
@@ -188,7 +199,43 @@ export default function InspectionBookingForm() {
   const handleSubmit = async () => {
     try {
       setSubmitting(true);
+      setError("");
 
+      // Validation
+      if (!inspectionData.date) {
+        throw new Error("Inspection Date is required");
+      }
+      if (!inspectionData.company?.trim()) {
+        throw new Error("Company is required");
+      }
+      if (!inspectionData.invoiceno?.trim()) {
+        throw new Error("Invoice Number is required");
+      }
+      if (inspectionData.vehicles.length === 0) {
+        throw new Error("At least one vehicle is required");
+      }
+      if (
+        inspectionData.invoice_taxable_amount === "" ||
+        isNaN(parseFloat(inspectionData.invoice_taxable_amount)) ||
+        parseFloat(inspectionData.invoice_taxable_amount) < 0
+      ) {
+        throw new Error("Invoice Taxable Amount must be a non-negative number");
+      }
+      if (
+        inspectionData.tax_free === "" ||
+        isNaN(parseFloat(inspectionData.tax_free)) ||
+        parseFloat(inspectionData.tax_free) < 0
+      ) {
+        throw new Error("Tax Free Amount must be a non-negative number");
+      }
+      if (!["Paid", "UnPaid"].includes(inspectionData.paid_status)) {
+        throw new Error("Invalid payment status");
+      }
+      if (!inspectionData.admin_id) {
+        throw new Error("Admin ID is required");
+      }
+
+      // Upload image if provided
       let imagePath = "";
       if (inspectionData.receiptImage) {
         const base64Image = await convertToBase64(inspectionData.receiptImage[0]);
@@ -196,25 +243,21 @@ export default function InspectionBookingForm() {
         if (!imagePath) throw new Error("Failed to upload receipt image");
       }
 
-      const vehicleNo = inspectionData.vehicles.map((v) => v.chassisNo).join(", ");
-      const vamountDoller =
-        inspectionData.vehicles.length > 0
-          ? inspectionData.invoice_amount_dollers / inspectionData.vehicles.length
-          : 0;
-
       const payload = {
         date: inspectionData.date,
-        company: inspectionData.company,
-        vehicleNo: vehicleNo,
-        invoiceno: inspectionData.invoiceno || `INS-${Date.now()}`,
-        invoice_amount: parseFloat(inspectionData.invoice_amount) || 0,
-        invoice_tax: inspectionData.invoice_tax,
-        invoice_total: inspectionData.invoice_total,
+        company: inspectionData.company.trim(),
+        vehicleNo: inspectionData.vehicles.length,
+        invoiceno: inspectionData.invoiceno.trim(),
+        invoice_taxable_amount: parseFloat(inspectionData.invoice_taxable_amount) || 0,
+        without_tax: parseFloat(inspectionData.without_tax) || 0,
+        with_tax: parseFloat(inspectionData.with_tax) || 0,
+        tax_free: parseFloat(inspectionData.tax_free) || 0,
+        total_amount: inspectionData.total_amount,
         invoice_amount_dollers: inspectionData.invoice_amount_dollers,
-        vamount_doller: vamountDoller,
+        vamount_doller: inspectionData.vamount_doller,
         imagePath: imagePath || "",
         paid_status: inspectionData.paid_status,
-        admin_id: inspectionData.admin_id,
+        admin_id: parseInt(inspectionData.admin_id),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         vehicles: inspectionData.vehicles.map((v) => ({
@@ -222,7 +265,7 @@ export default function InspectionBookingForm() {
         })),
       };
 
-      console.log("Data to be submitted:", JSON.stringify(payload, null, 2));
+      console.log("Submitting payload:", JSON.stringify(payload, null, 2));
 
       const response = await fetch("/api/admin/inspection", {
         method: "POST",
@@ -230,12 +273,11 @@ export default function InspectionBookingForm() {
         body: JSON.stringify(payload),
       });
 
-      const responseData = await response.json();
       if (!response.ok) {
-        throw new Error(responseData.details || "Failed to submit inspection data");
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.details || "Failed to submit inspection data");
       }
 
-      console.log("Submission response:", responseData);
       alert("Inspection data submitted successfully!");
       setInspectionData({
         date: "",
@@ -244,16 +286,22 @@ export default function InspectionBookingForm() {
         admin_id: userid,
         vehicles: [],
         invoiceno: "",
-        invoice_amount: "",
-        invoice_tax: 0,
-        invoice_total: 0,
+        invoice_taxable_amount: "",
+        without_tax: "",
+        with_tax: "",
+        tax_free: "",
+        total_amount: 0,
         invoice_amount_dollers: 0,
+        vamount_doller: 0,
         paid_status: "UnPaid",
       });
       setImagePreview(null);
+      setAllVehicles((prev) =>
+        prev.filter((v) => !payload.vehicles.some((pv) => pv.id === v.id))
+      );
     } catch (error) {
-      console.error("Error submitting inspection data:", error.stack || error);
-      alert(`Failed to submit: ${error.message}`);
+      console.error("Submission error:", error.message);
+      setError(`Failed to submit: ${error.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -264,12 +312,17 @@ export default function InspectionBookingForm() {
       <Typography variant="h4" gutterBottom>
         New Inspection Booking
       </Typography>
+      {error && (
+        <Typography variant="body2" color="error" sx={{ mb: 2 }}>
+          {error}
+        </Typography>
+      )}
 
       <Paper elevation={3} sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Inspection Details
         </Typography>
-        <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
+        <Box display="grid" gridTemplateColumns="repeat(3, 1fr)" gap={2}>
           <TextField
             type="date"
             label="Inspection Date"
@@ -279,6 +332,7 @@ export default function InspectionBookingForm() {
             InputLabelProps={{ shrink: true }}
             fullWidth
             required
+            error={!inspectionData.date && !!error}
           />
           <TextField
             label="Company"
@@ -287,6 +341,7 @@ export default function InspectionBookingForm() {
             onChange={(e) => handleInputChange("company", e.target.value)}
             fullWidth
             required
+            error={!inspectionData.company?.trim() && !!error}
           />
           <TextField
             label="Invoice Number"
@@ -294,49 +349,83 @@ export default function InspectionBookingForm() {
             value={inspectionData.invoiceno}
             onChange={(e) => handleInputChange("invoiceno", e.target.value)}
             fullWidth
-          />
-          <Select
-            label="Payment Status"
-            variant="outlined"
-            value={inspectionData.paid_status}
-            onChange={(e) => handleInputChange("paid_status", e.target.value)}
-            fullWidth
-          >
-            <MenuItem value="UnPaid">UnPaid</MenuItem>
-            <MenuItem value="Paid">Paid</MenuItem>
-          </Select>
-          <TextField
-            type="number"
-            label="Invoice Amount (Yen)"
-            variant="outlined"
-            value={inspectionData.invoice_amount}
-            onChange={(e) => handleInputChange("invoice_amount", e.target.value)}
-            fullWidth
+            required
+            error={!inspectionData.invoiceno?.trim() && !!error}
           />
           <TextField
             type="number"
-            label="Invoice Tax (10%) (Yen)"
+            label="Taxable Amount (Yen)"
             variant="outlined"
-            value={inspectionData.invoice_tax.toFixed(2)}
+            value={inspectionData.invoice_taxable_amount}
+            onChange={(e) => handleInputChange("invoice_taxable_amount", e.target.value)}
+            fullWidth
+            inputProps={{ min: 0, step: "0.01" }}
+            required
+            error={
+              inspectionData.invoice_taxable_amount !== "" &&
+              (isNaN(parseFloat(inspectionData.invoice_taxable_amount)) ||
+                parseFloat(inspectionData.invoice_taxable_amount) < 0)
+            }
+          />
+          <TextField
+            type="number"
+            label="Without Tax (Yen)"
+            variant="outlined"
+            value={inspectionData.without_tax}
+            onChange={(e) => handleInputChange("without_tax", e.target.value)}
+            fullWidth
+            inputProps={{ min: 0, step: "0.01" }}
+          />
+          <TextField
+            type="number"
+            label="With Tax (Yen)"
+            variant="outlined"
+            value={inspectionData.with_tax}
+            onChange={(e) => handleInputChange("with_tax", e.target.value)}
+            fullWidth
+            inputProps={{ min: 0, step: "0.01" }}
+          />
+          <TextField
+            type="number"
+            label="Tax Free Amount (Yen)"
+            variant="outlined"
+            value={inspectionData.tax_free}
+            onChange={(e) => handleInputChange("tax_free", e.target.value)}
+            fullWidth
+            inputProps={{ min: 0, step: "0.01" }}
+            required
+            error={
+              inspectionData.tax_free !== "" &&
+              (isNaN(parseFloat(inspectionData.tax_free)) || parseFloat(inspectionData.tax_free) < 0)
+            }
+          />
+          <TextField
+            type="number"
+            label="Total Amount (Yen)"
+            variant="outlined"
+            value={inspectionData.total_amount.toFixed(2)}
             InputProps={{ readOnly: true }}
             fullWidth
           />
           <TextField
             type="number"
-            label="Invoice Total (Yen)"
+            label="Total Amount (USD)"
             variant="outlined"
-            value={inspectionData.invoice_total.toFixed(2)}
+            value={inspectionData.invoice_amount_dollers.toFixed(6)}
             InputProps={{ readOnly: true }}
             fullWidth
           />
-          <TextField
-            type="number"
-            label="Invoice Total (USD)"
-            variant="outlined"
-            value={inspectionData.invoice_amount_dollers.toFixed(2)}
-            InputProps={{ readOnly: true }}
-            fullWidth
-          />
+          <FormControl variant="outlined" fullWidth>
+            <InputLabel>Payment Status</InputLabel>
+            <Select
+              value={inspectionData.paid_status}
+              onChange={(e) => handleInputChange("paid_status", e.target.value)}
+              label="Payment Status"
+            >
+              <MenuItem value="UnPaid">UnPaid</MenuItem>
+              <MenuItem value="Paid">Paid</MenuItem>
+            </Select>
+          </FormControl>
           <Box display="flex" flexDirection="column">
             <TextField
               type="file"
@@ -380,8 +469,8 @@ export default function InspectionBookingForm() {
                 label="Search Vehicles (Chassis No, Maker, Year)"
                 variant="outlined"
                 fullWidth
-                error={!!error}
-                helperText={error || (allVehicles.length === 0 ? "No vehicles available" : "")}
+                error={!!error && error.includes("vehicle")}
+                helperText={error.includes("vehicle") ? error : ""}
               />
             )}
             renderOption={(props, vehicle) => (
@@ -411,6 +500,7 @@ export default function InspectionBookingForm() {
                       e.stopPropagation();
                       addToInspection(vehicle);
                     }}
+                    disabled={vehicle.status !== "Transport"}
                   >
                     <PlusIcon />
                   </IconButton>
@@ -458,7 +548,7 @@ export default function InspectionBookingForm() {
                   type="number"
                   label="Amount (USD)"
                   variant="outlined"
-                  value={(vehicle.vamount_doller || 0).toFixed(2)}
+                  value={(vehicle.vamount_doller || 0).toFixed(6)}
                   InputProps={{ readOnly: true }}
                   fullWidth
                 />
@@ -474,10 +564,10 @@ export default function InspectionBookingForm() {
             ))}
             <Box mt={2} display="flex" gap={2}>
               <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                Total Amount (Yen): {totalAmountYen.toFixed(2)}
+                Total Amount (Yen): {inspectionData.total_amount.toFixed(2)}
               </Typography>
               <Typography variant="body1" sx={{ fontWeight: "bold" }}>
-                Total Amount (USD): {totalAmountDollars.toFixed(2)}
+                Total Amount (USD): {inspectionData.invoice_amount_dollers.toFixed(6)}
               </Typography>
             </Box>
           </Box>

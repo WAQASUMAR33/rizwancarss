@@ -209,6 +209,7 @@ model Transport {
   id            Int      @id @default(autoincrement())
   date          DateTime
   deliveryDate  DateTime
+  yardname      String 
   port          String
   company       String
   v_amount      Float  @default(0)
@@ -230,9 +231,11 @@ model Inspection {
   vehicleNo              Int      @default(0)
   company                String
   date                   DateTime
-  invoice_amount         Float    @default(0)
-  invoice_tax         Float    @default(0)
-  invoice_total       Float    @default(0)
+  invoice_taxable_amount     Float    @default(0)
+  without_tax            Float    @default(0)
+  with_tax               Float    @default(0)
+  tax_free               Float    @default(0)
+  total_amount           Float    @default(0)
   invoice_amount_dollers Float    @default(0)
   vamount_doller         Float    @default(0)
   invoiceno              String

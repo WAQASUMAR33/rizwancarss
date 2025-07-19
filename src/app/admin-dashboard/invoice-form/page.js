@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { ClipLoader } from "react-spinners";
 import {
@@ -42,7 +42,8 @@ const InvoicesList = () => {
   const [imagePreview, setImagePreview] = useState(null);
   const [isImageUploading, setIsImageUploading] = useState(false);
   const [isSaveButtonDisabled, setIsSaveButtonDisabled] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); // New state for save loading
+  const [isSaving, setIsSaving] = useState(false);
+  const [manualEdits, setManualEdits] = useState({});
   const router = useRouter();
 
   useEffect(() => {
@@ -68,8 +69,8 @@ const InvoicesList = () => {
           ...invoice,
           createdAt: invoice.createdAt || invoice.created_at,
           updatedAt: invoice.updatedAt || invoice.updated_at,
-          amountDoller: invoice.amount_doller,
-          amountYen: invoice.amountYen || invoice.amount_yen,
+          amountDoller: invoice.amount_doller || 0,
+          amountYen: invoice.amountYen || invoice.amount_yen || 0,
           vehicles: invoice.vehicles || [],
           imagePath: invoice.imagePath || "",
         }));
@@ -102,32 +103,22 @@ const InvoicesList = () => {
       "bidAmount10per",
       "commissionAmount",
       "numberPlateTax",
+      "repairCharges",
+      "additionalAmount",
     ];
     const totalYen = fieldsToSum.reduce((sum, field) => {
       return sum + (parseFloat(vehicle[field]) || 0);
     }, 0);
     const totalUSD = exchangeRate ? (totalYen * exchangeRate).toFixed(2) : 0;
-    return { totalYen, totalUSD };
+    return { totalYen, totalUSD: parseFloat(totalUSD) || 0 };
   };
 
-  useEffect(() => {
-    if (editedInvoice && editedInvoice.vehicles) {
-      const updatedVehicles = editedInvoice.vehicles.map((vehicle) => {
-        const { totalYen, totalUSD } = calculateVehicleTotals(vehicle);
-        return {
-          ...vehicle,
-          totalAmount_yen: totalYen,
-          totalAmount_dollers: totalUSD,
-        };
-      });
-      setEditedInvoice((prev) => ({
-        ...prev,
-        vehicles: updatedVehicles,
-        amountYen: updatedVehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_yen) || 0), 0),
-        amountDoller: updatedVehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_dollers) || 0), 0),
-      }));
-    }
-  }, [editedInvoice?.vehicles, exchangeRate]);
+  const getInvoiceTotals = useMemo(() => {
+    if (!editedInvoice?.vehicles) return { totalYen: 0, totalUSD: 0 };
+    const totalYen = editedInvoice.vehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_yen) || 0), 0);
+    const totalUSD = editedInvoice.vehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_dollers) || 0), 0);
+    return { totalYen, totalUSD };
+  }, [editedInvoice?.vehicles]);
 
   const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const paginatedInvoices = filteredInvoices.slice(
@@ -200,24 +191,85 @@ const InvoicesList = () => {
   };
 
   const handleEditChange = (field, value) => {
-    setEditedInvoice((prev) => ({ ...prev, [field]: value }));
+    setEditedInvoice((prev) => ({
+      ...prev,
+      [field]: field.includes("amount") ? (value === "" ? "" : parseFloat(value) || 0) : field === "added_by" ? parseInt(value) || 0 : value,
+    }));
+    if (field.includes("amount")) {
+      setManualEdits((prev) => ({ ...prev, [field]: true }));
+    }
   };
 
   const handleVehicleEditChange = (vehicleIndex, field, value) => {
     setEditedInvoice((prev) => {
-      const updatedVehicles = [...prev.vehicles];
-      updatedVehicles[vehicleIndex] = { ...updatedVehicles[vehicleIndex], [field]: value };
-      return { ...prev, vehicles: updatedVehicles };
+      const updatedVehicles = prev.vehicles.map((vehicle, idx) => {
+        if (idx !== vehicleIndex) return vehicle;
+        const updatedVehicle = {
+          ...vehicle,
+          [field]: field.includes("Amount") || field === "added_by" ? (value === "" ? "" : parseFloat(value) || 0) : value,
+        };
+        if (
+          field.includes("Amount") &&
+          !field.includes("totalAmount") &&
+          !manualEdits[`vehicle_${vehicleIndex}_totalAmount_yen`] &&
+          !manualEdits[`vehicle_${vehicleIndex}_totalAmount_dollers`]
+        ) {
+          const { totalYen, totalUSD } = calculateVehicleTotals(updatedVehicle);
+          updatedVehicle.totalAmount_yen = totalYen;
+          updatedVehicle.totalAmount_dollers = totalUSD;
+        }
+        return updatedVehicle;
+      });
+      const totalYen = updatedVehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_yen) || 0), 0);
+      const totalUSD = updatedVehicles.reduce((sum, v) => sum + (parseFloat(v.totalAmount_dollers) || 0), 0);
+      return {
+        ...prev,
+        vehicles: updatedVehicles,
+        amountYen: manualEdits.amountYen ? prev.amountYen : totalYen,
+        amountDoller: manualEdits.amountDoller ? prev.amountDoller : totalUSD,
+      };
     });
+    if (field.includes("totalAmount")) {
+      setManualEdits((prev) => ({ ...prev, [`vehicle_${vehicleIndex}_${field}`]: true }));
+    }
   };
 
   const saveEditedInvoice = async () => {
+    const fieldsToSum = [
+      "auction_amount",
+      "tenPercentAdd",
+      "recycleAmount",
+      "bidAmount",
+      "bidAmount10per",
+      "commissionAmount",
+      "numberPlateTax",
+      "repairCharges",
+      "additionalAmount",
+      "totalAmount_yen",
+      "totalAmount_dollers",
+    ];
+    const hasInvalidFields = editedInvoice.vehicles.some((v) =>
+      fieldsToSum.some((field) => v[field] !== "" && isNaN(parseFloat(v[field])))
+    );
+    if (hasInvalidFields || (editedInvoice.amountYen !== "" && isNaN(parseFloat(editedInvoice.amountYen))) || (editedInvoice.amountDoller !== "" && isNaN(parseFloat(editedInvoice.amountDoller)))) {
+      alert("Please correct invalid numeric fields");
+      return;
+    }
     try {
-      setIsSaving(true); // Start loading
+      setIsSaving(true);
       const response = await fetch(`/api/admin/invoice-management/${selectedInvoice.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editedInvoice),
+        body: JSON.stringify({
+          ...editedInvoice,
+          vehicles: editedInvoice.vehicles.map((v) => ({
+            ...v,
+            totalAmount_yen: parseFloat(v.totalAmount_yen) || 0,
+            totalAmount_dollers: parseFloat(v.totalAmount_dollers) || 0,
+          })),
+          amountYen: parseFloat(editedInvoice.amountYen) || 0,
+          amountDoller: parseFloat(editedInvoice.amountDoller) || 0,
+        }),
       });
       if (!response.ok) throw new Error(`Failed to update invoice: ${response.statusText}`);
       const updatedInvoice = await response.json();
@@ -232,7 +284,7 @@ const InvoicesList = () => {
     } catch (err) {
       alert(`Failed to update invoice: ${err.message}`);
     } finally {
-      setIsSaving(false); // Stop loading
+      setIsSaving(false);
     }
   };
 
@@ -245,10 +297,8 @@ const InvoicesList = () => {
         throw new Error("Failed to fetch currency data");
       }
       const data = await response.json();
-      console.log("Currency pair data:", data);
       return data;
     } catch (error) {
-      console.error("Error fetching currencies:", error);
       return null;
     }
   }
@@ -325,6 +375,7 @@ const InvoicesList = () => {
                         setNewImage(null);
                         setImagePreview(null);
                         setIsSaveButtonDisabled(invoice.status === "PAID");
+                        setManualEdits({});
                       }}
                       sx={{ mr: 1 }}
                     >
@@ -399,61 +450,71 @@ const InvoicesList = () => {
                   <Typography variant="caption" color="textSecondary">Date</Typography>
                   <TextField
                     type="date"
-                    value={editedInvoice.date.split("T")[0]}
+                    value={editedInvoice.date ? editedInvoice.date.split("T")[0] : ""}
                     onChange={(e) => handleEditChange("date", e.target.value)}
                     fullWidth
                     InputLabelProps={{ shrink: true }}
+                    disabled={isSaving}
                   />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Number</Typography>
                   <TextField
-                    value={editedInvoice.number}
+                    value={editedInvoice.number ?? ""}
                     onChange={(e) => handleEditChange("number", e.target.value)}
                     fullWidth
+                    disabled={isSaving}
                   />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Amount (USD)</Typography>
                   <TextField
                     type="number"
-                    value={editedInvoice.amountDoller || ""}
-                    InputProps={{ readOnly: true }}
+                    value={editedInvoice.amountDoller ?? ""}
+                    onChange={(e) => handleEditChange("amountDoller", e.target.value)}
                     fullWidth
+                    disabled={isSaving}
+                    error={editedInvoice.amountDoller !== "" && isNaN(parseFloat(editedInvoice.amountDoller))}
+                    helperText={editedInvoice.amountDoller !== "" && isNaN(parseFloat(editedInvoice.amountDoller)) ? "Invalid number" : ""}
                   />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Amount (Yen)</Typography>
                   <TextField
                     type="number"
-                    value={editedInvoice.amountYen || ""}
-                    InputProps={{ readOnly: true }}
+                    value={editedInvoice.amountYen ?? ""}
+                    onChange={(e) => handleEditChange("amountYen", e.target.value)}
                     fullWidth
+                    disabled={isSaving}
+                    error={editedInvoice.amountYen !== "" && isNaN(parseFloat(editedInvoice.amountYen))}
+                    helperText={editedInvoice.amountYen !== "" && isNaN(parseFloat(editedInvoice.amountYen)) ? "Invalid number" : ""}
                   />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Auction House</Typography>
                   <TextField
-                    value={editedInvoice.auctionHouse}
+                    value={editedInvoice.auctionHouse ?? ""}
                     onChange={(e) => handleEditChange("auctionHouse", e.target.value)}
                     fullWidth
+                    disabled={isSaving}
                   />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Added By</Typography>
                   <TextField
                     type="number"
-                    value={editedInvoice.added_by}
+                    value={editedInvoice.added_by ?? ""}
                     onChange={(e) => handleEditChange("added_by", parseInt(e.target.value) || 0)}
                     fullWidth
+                    disabled={isSaving}
                   />
                 </Paper>
                 <Paper elevation={1} sx={{ p: 2 }}>
                   <Typography variant="caption" color="textSecondary">Status</Typography>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth disabled={isSaving}>
                     <InputLabel>Status</InputLabel>
                     <Select
-                      value={editedInvoice.status}
+                      value={editedInvoice.status ?? ""}
                       onChange={(e) => handleEditChange("status", e.target.value)}
                       label="Status"
                     >
@@ -484,7 +545,7 @@ const InvoicesList = () => {
                       component="label"
                       startIcon={<UploadIcon />}
                       sx={{ mr: 1 }}
-                      disabled={isImageUploading}
+                      disabled={isImageUploading || isSaving}
                     >
                       {isImageUploading ? "Uploading..." : "Upload New Image"}
                       <input type="file" hidden accept="image/*" onChange={handleImageChange} />
@@ -500,7 +561,7 @@ const InvoicesList = () => {
                           variant="contained"
                           color="primary"
                           onClick={saveImage}
-                          disabled={isImageUploading}
+                          disabled={isImageUploading || isSaving}
                         >
                           {isImageUploading ? <ClipLoader color="#ffffff" size={20} /> : "Save Image"}
                         </Button>
@@ -514,170 +575,213 @@ const InvoicesList = () => {
                 <Box mt={4}>
                   <Typography variant="h6" gutterBottom>Vehicle Details</Typography>
                   {editedInvoice.vehicles.map((vehicle, idx) => (
-                    <Paper key={vehicle.id} elevation={1} sx={{ p: 2, mb: 2 }}>
+                    <Paper key={vehicle.id || idx} elevation={1} sx={{ p: 2, mb: 2 }}>
                       <Typography variant="subtitle1" gutterBottom>Vehicle #{idx + 1}</Typography>
                       <Box display="grid" gridTemplateColumns="repeat(4, 1fr)" gap={2}>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Chassis No</Typography>
                           <TextField
-                            value={vehicle.chassisNo || ""}
+                            value={vehicle.chassisNo ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "chassisNo", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Maker</Typography>
                           <TextField
-                            value={vehicle.maker || ""}
+                            value={vehicle.maker ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "maker", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Year</Typography>
                           <TextField
-                            value={vehicle.year || ""}
+                            value={vehicle.year ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "year", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Color</Typography>
                           <TextField
-                            value={vehicle.color || ""}
+                            value={vehicle.color ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "color", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Engine Type</Typography>
                           <TextField
-                            value={vehicle.engineType || ""}
+                            value={vehicle.engineType ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "engineType", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                          />
+                        </Box>
+
+
+                          <Box>
+                          <Typography variant="caption" color="textSecondary">Auction House</Typography>
+                          <TextField
+                            value={vehicle.auction_house ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "auction_house", e.target.value)}
+                            fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Auction Amount</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.auction_amount || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "auction_amount", parseFloat(e.target.value) || 0)}
+                            value={vehicle.auction_amount ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "auction_amount", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.auction_amount !== "" && isNaN(parseFloat(vehicle.auction_amount))}
+                            helperText={vehicle.auction_amount !== "" && isNaN(parseFloat(vehicle.auction_amount)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">10% Add</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.tenPercentAdd || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "tenPercentAdd", parseFloat(e.target.value) || 0)}
+                            value={vehicle.tenPercentAdd ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "tenPercentAdd", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.tenPercentAdd !== "" && isNaN(parseFloat(vehicle.tenPercentAdd))}
+                            helperText={vehicle.tenPercentAdd !== "" && isNaN(parseFloat(vehicle.tenPercentAdd)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Recycle Amount</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.recycleAmount || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "recycleAmount", parseFloat(e.target.value) || 0)}
+                            value={vehicle.recycleAmount ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "recycleAmount", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.recycleAmount !== "" && isNaN(parseFloat(vehicle.recycleAmount))}
+                            helperText={vehicle.recycleAmount !== "" && isNaN(parseFloat(vehicle.recycleAmount)) ? "Invalid number" : ""}
                           />
                         </Box>
-                        <Box>
-                          <Typography variant="caption" color="textSecondary">Auction House</Typography>
-                          <TextField
-                            value={vehicle.auction_house || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "auction_house", e.target.value)}
-                            fullWidth
-                          />
-                        </Box>
+                      
                         <Box>
                           <Typography variant="caption" color="textSecondary">Bid Amount</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.bidAmount || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "bidAmount", parseFloat(e.target.value) || 0)}
+                            value={vehicle.bidAmount ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "bidAmount", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.bidAmount !== "" && isNaN(parseFloat(vehicle.bidAmount))}
+                            helperText={vehicle.bidAmount !== "" && isNaN(parseFloat(vehicle.bidAmount)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Bid Amount 10%</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.bidAmount10per || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "bidAmount10per", parseFloat(e.target.value) || 0)}
+                            value={vehicle.bidAmount10per ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "bidAmount10per", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.bidAmount10per !== "" && isNaN(parseFloat(vehicle.bidAmount10per))}
+                            helperText={vehicle.bidAmount10per !== "" && isNaN(parseFloat(vehicle.bidAmount10per)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Commission Amount</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.commissionAmount || ""}
-                            onChange={(e) => handleVehicleEditChange(idx, "commissionAmount", parseFloat(e.target.value) || 0)}
+                            value={vehicle.commissionAmount ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "commissionAmount", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.commissionAmount !== "" && isNaN(parseFloat(vehicle.commissionAmount))}
+                            helperText={vehicle.commissionAmount !== "" && isNaN(parseFloat(vehicle.commissionAmount)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Number Plate Tax</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.numberPlateTax || "0"}
-                            onChange={(e) => handleVehicleEditChange(idx, "numberPlateTax", parseFloat(e.target.value) || 0)}
+                            value={vehicle.numberPlateTax ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "numberPlateTax", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.numberPlateTax !== "" && isNaN(parseFloat(vehicle.numberPlateTax))}
+                            helperText={vehicle.numberPlateTax !== "" && isNaN(parseFloat(vehicle.numberPlateTax)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Repair Charges</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.repairCharges || "0"}
-                            onChange={(e) => handleVehicleEditChange(idx, "repairCharges", parseFloat(e.target.value) || 0)}
+                            value={vehicle.repairCharges ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "repairCharges", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.repairCharges !== "" && isNaN(parseFloat(vehicle.repairCharges))}
+                            helperText={vehicle.repairCharges !== "" && isNaN(parseFloat(vehicle.repairCharges)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Total Amount (Yen)</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.totalAmount_yen || ""}
-                            InputProps={{ readOnly: true }}
+                            value={vehicle.totalAmount_yen ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "totalAmount_yen", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.totalAmount_yen !== "" && isNaN(parseFloat(vehicle.totalAmount_yen))}
+                            helperText={vehicle.totalAmount_yen !== "" && isNaN(parseFloat(vehicle.totalAmount_yen)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Total Amount (USD)</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.totalAmount_dollers || ""}
-                            InputProps={{ readOnly: true }}
+                            value={vehicle.totalAmount_dollers ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "totalAmount_dollers", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.totalAmount_dollers !== "" && isNaN(parseFloat(vehicle.totalAmount_dollers))}
+                            helperText={vehicle.totalAmount_dollers !== "" && isNaN(parseFloat(vehicle.totalAmount_dollers)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Sending Port</Typography>
                           <TextField
-                            value={vehicle.seaPort?.name || ""}
+                            value={vehicle.seaPort?.name ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "seaPort", { name: e.target.value })}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Additional Amount</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.additionalAmount || "0"}
-                            onChange={(e) => handleVehicleEditChange(idx, "additionalAmount", parseFloat(e.target.value) || 0)}
+                            value={vehicle.additionalAmount ?? ""}
+                            onChange={(e) => handleVehicleEditChange(idx, "additionalAmount", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
+                            error={vehicle.additionalAmount !== "" && isNaN(parseFloat(vehicle.additionalAmount))}
+                            helperText={vehicle.additionalAmount !== "" && isNaN(parseFloat(vehicle.additionalAmount)) ? "Invalid number" : ""}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Document Required</Typography>
-                          <FormControl fullWidth>
+                          <FormControl fullWidth disabled={isSaving}>
                             <InputLabel>Document Required</InputLabel>
                             <Select
-                              value={vehicle.isDocumentRequired || ""}
+                              value={vehicle.isDocumentRequired ?? ""}
                               onChange={(e) => handleVehicleEditChange(idx, "isDocumentRequired", e.target.value)}
                               label="Document Required"
                             >
@@ -694,14 +798,15 @@ const InvoicesList = () => {
                             onChange={(e) => handleVehicleEditChange(idx, "documentReceiveDate", e.target.value)}
                             fullWidth
                             InputLabelProps={{ shrink: true }}
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Ownership</Typography>
-                          <FormControl fullWidth>
+                          <FormControl fullWidth disabled={isSaving}>
                             <InputLabel>Ownership</InputLabel>
                             <Select
-                              value={vehicle.isOwnership || ""}
+                              value={vehicle.isOwnership ?? ""}
                               onChange={(e) => handleVehicleEditChange(idx, "isOwnership", e.target.value)}
                               label="Ownership"
                             >
@@ -718,31 +823,35 @@ const InvoicesList = () => {
                             onChange={(e) => handleVehicleEditChange(idx, "ownershipDate", e.target.value)}
                             fullWidth
                             InputLabelProps={{ shrink: true }}
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Status</Typography>
                           <TextField
-                            value={vehicle.status || ""}
+                            value={vehicle.status ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "status", e.target.value)}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Admin</Typography>
                           <TextField
-                            value={vehicle.admin?.fullname || ""}
+                            value={vehicle.admin?.fullname ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "admin", { fullname: e.target.value })}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         <Box>
                           <Typography variant="caption" color="textSecondary">Added By</Typography>
                           <TextField
                             type="number"
-                            value={vehicle.added_by || ""}
+                            value={vehicle.added_by ?? ""}
                             onChange={(e) => handleVehicleEditChange(idx, "added_by", parseInt(e.target.value) || 0)}
                             fullWidth
+                            disabled={isSaving}
                           />
                         </Box>
                         {vehicle.vehicleImages && vehicle.vehicleImages.length > 0 ? (
@@ -791,7 +900,7 @@ const InvoicesList = () => {
                 variant="contained"
                 color="success"
                 onClick={saveEditedInvoice}
-                disabled={isImageUploading || isSaveButtonDisabled || isSaving} // Disable during saving
+                disabled={isImageUploading || isSaveButtonDisabled || isSaving}
               >
                 {isSaving ? <ClipLoader color="#ffffff" size={20} /> : "Save Changes"}
               </Button>
@@ -801,7 +910,7 @@ const InvoicesList = () => {
             variant="contained"
             color="error"
             onClick={() => setSelectedInvoice(null)}
-            disabled={isSaving} // Optionally disable the Close button during saving
+            disabled={isSaving}
           >
             Close
           </Button>

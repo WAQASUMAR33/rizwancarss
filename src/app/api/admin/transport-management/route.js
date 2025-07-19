@@ -12,7 +12,9 @@ export async function POST(request) {
       date,
       deliveryDate,
       port,
+      yard,
       company,
+      yardname,
       paymentStatus,
       imagePath,
       admin_id, // Ignored since we're hardcoding admin_id 1
@@ -22,7 +24,7 @@ export async function POST(request) {
     } = data;
 
     // Validation for required fields
-    if (!port || !company || !vehicles || vehicles.length === 0) {
+    if (!port || !company || !vehicles || !yardname || vehicles.length === 0) {
       console.log("Validation failed: Missing required fields", { port, company, vehicles });
       return NextResponse.json(
         { error: "Missing required fields (port, company, or vehicles)", status: false },
@@ -149,6 +151,7 @@ export async function POST(request) {
         deliveryDate: deliveryDate ? new Date(deliveryDate) : new Date(),
         port,
         company,
+        yardname,
         paid_status: paymentStatus,
         v_amount: parseFloat(vehicle.v_amount),
         v_10per: parseFloat(vehicle.v_10per),

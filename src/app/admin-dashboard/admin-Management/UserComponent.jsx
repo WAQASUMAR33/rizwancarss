@@ -183,7 +183,7 @@ export default function AdminUserManagement() {
                 onClick={handleAddUser}
                 sx={{ '&:hover': { bgcolor: 'primary.dark' } }}
               >
-                Add Admin User
+                Add Account
               </Button>
             </Tooltip>
           </Box>
@@ -234,6 +234,8 @@ export default function AdminUserManagement() {
                   >
                     <MenuItem value="superadmin">Super Admin</MenuItem>
                     <MenuItem value="admin">Admin</MenuItem>
+                    <MenuItem value=">Company Account">Company Account</MenuItem>
+                     <MenuItem value="Personel Account">Personel Account</MenuItem>
                   </Select>
                 </FormControl>
               </DialogContent>

@@ -29,6 +29,15 @@ export async function POST(request) {
 
     const addedBy = parseInt(body.added_by);
 
+    // Validate admin exists
+    const admin = await prisma.admin.findUnique({ where: { id: addedBy } });
+    if (!admin) {
+      return NextResponse.json(
+        { message: 'Invalid added_by: Admin not found', status: false },
+        { status: 400 }
+      );
+    }
+
     const result = await prisma.$transaction(async (tx) => {
       console.log("Starting transaction");
 
@@ -95,6 +104,41 @@ export async function POST(request) {
           };
 
           const vehicleRecord = await tx.addVehicle.create({ data: vehicleData });
+
+          // If invoice status is PAID, update admin balance and create ledger entry for this vehicle
+          if (body.status === 'PAID') {
+            const adminId = parseInt(vehicle.admin_id);
+            const admin = await tx.admin.findUnique({ where: { id: adminId } });
+            if (!admin) {
+              throw new Error(`Admin with ID ${adminId} not found for vehicle ${vehicle.chassisNo || 'unknown'}`);
+            }
+            const currentBalance = admin.balance || 0;
+            const vehicleAmount = parseFloat(vehicle.totalAmount_dollers) || 0;
+            const newBalance = currentBalance + vehicleAmount;
+
+            // Update admin balance
+            await tx.admin.update({
+              where: { id: adminId },
+              data: { balance: newBalance },
+            });
+            console.log(`Admin ${adminId} balance updated to ${newBalance}`);
+
+            // Create ledger entry
+            await tx.ledger.create({
+              data: {
+                admin_id: adminId,
+                debit: 0,
+                credit: vehicleAmount,
+                balance: newBalance,
+                description: `Invoice ${body.number} paid for vehicle ${vehicle.chassisNo || 'unknown'}, amount: ${vehicleAmount} USD`,
+                transaction_at: new Date(),
+                created_at: new Date(),
+                updated_at: new Date(),
+              },
+            });
+            console.log(`Ledger entry created for invoice ${body.number} and vehicle ${vehicle.chassisNo || 'unknown'}`);
+          }
+
           console.log(`Vehicle created: ${vehicleRecord.chassisNo}`);
           return vehicleRecord;
         })

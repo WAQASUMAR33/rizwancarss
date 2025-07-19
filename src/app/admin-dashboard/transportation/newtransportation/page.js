@@ -43,6 +43,7 @@ export default function TransportBookingForm() {
     deliveryDate: "",
     port: "",
     company: "",
+    yardname: "",
     paymentStatus: "UnPaid",
     receiptImage: null,
     admin_id: null,
@@ -203,6 +204,7 @@ export default function TransportBookingForm() {
         deliveryDate: transportData.deliveryDate || new Date().toISOString().split("T")[0],
         port: transportData.port,
         company: transportData.company,
+        yardname: transportData.yardname,
         paymentStatus: transportData.paymentStatus,
         imagePath: imagePath || "",
         admin_id: transportData.admin_id || 1, // Fallback to 1 if admin_id is not set
@@ -238,6 +240,7 @@ export default function TransportBookingForm() {
         deliveryDate: "",
         port: "",
         company: "",
+        yardname: "",
         paymentStatus: "UnPaid",
         receiptImage: null,
         admin_id: adminId,
@@ -301,6 +304,17 @@ export default function TransportBookingForm() {
               ))}
             </Select>
           </FormControl>
+
+          <TextField
+            label="Yard Name"
+            variant="outlined"
+            value={transportData.yardname}
+            onChange={(e) => handleInputChange("yardname", e.target.value)}
+            fullWidth
+            required
+          />
+
+
           <TextField
             label="Company"
             variant="outlined"
