@@ -192,12 +192,12 @@ export default function TransportBookingForm() {
         throw new Error("At least one vehicle is required");
       }
 
-      let imagePath = "";
-      if (transportData.receiptImage) {
-        const base64Image = await convertToBase64(transportData.receiptImage[0]);
-        imagePath = await uploadImageToServer(base64Image);
-        if (!imagePath) throw new Error("Failed to upload receipt image");
-      }
+      // let imagePath = "";
+      // if (transportData.receiptImage) {
+      //   const base64Image = await convertToBase64(transportData.receiptImage[0]);
+      //   imagePath = await uploadImageToServer(base64Image);
+      //   if (!imagePath) throw new Error("Failed to upload receipt image");
+      // }
 
       const payload = {
         date: transportData.date || new Date().toISOString().split("T")[0],
@@ -206,7 +206,7 @@ export default function TransportBookingForm() {
         company: transportData.company,
         yardname: transportData.yardname,
         paymentStatus: transportData.paymentStatus,
-        imagePath: imagePath || "",
+        imagePath: "Not Available" || "Not Avialbale",
         admin_id: transportData.admin_id || 1, // Fallback to 1 if admin_id is not set
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -314,7 +314,6 @@ export default function TransportBookingForm() {
             required
           />
 
-
           <TextField
             label="Company"
             variant="outlined"
@@ -335,25 +334,7 @@ export default function TransportBookingForm() {
             </Select>
           </FormControl>
         </Box>
-        <Box mt={2}>
-          <TextField
-            type="file"
-            variant="outlined"
-            onChange={(e) => handleInputChange("receiptImage", e.target.files)}
-            inputProps={{ accept: "image/*" }}
-            label="Upload Receipt"
-            fullWidth
-          />
-          {imagePreview && (
-            <Box mt={2}>
-              <img
-                src={imagePreview}
-                alt="Receipt Preview"
-                style={{ width: 128, height: 128, objectFit: "cover", borderRadius: 8 }}
-              />
-            </Box>
-          )}
-        </Box>
+        
       </Paper>
 
       {/* Select Vehicle */}

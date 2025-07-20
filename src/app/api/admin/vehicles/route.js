@@ -69,14 +69,7 @@ export async function GET() {
               },
             }),
             prisma.inspection.findFirst({
-              where: { vehicleNo: vehicle.id },
-              select: {
-                invoice_amount: true,
-                invoice_tax: true,
-                invoice_total: true,
-                invoice_amount_dollers: true,
-                vamount_doller: true,
-              },
+              where: { vehicleNo: vehicle.id }
             }),
             prisma.portCollect.findFirst({
               where: { vehicleNo: vehicle.id },
